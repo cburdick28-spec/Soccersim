@@ -4,6 +4,8 @@ import type { Player } from "@/types/player";
 const TABLE_NAME = "fc26_players";
 const PLAYER_SELECT =
   "id, short_name, long_name, age, nationality_name, club_name, league_name, player_positions, overall, potential, pace, shooting, passing, dribbling, defending, physic, value_eur, wage_eur";
+const DEFAULT_PAGE_SIZE = 250;
+const MAX_PAGES = 40;
 
 export async function getPlayers(limit = 50): Promise<Player[]> {
   const supabase = getSupabaseClient();
@@ -87,6 +89,24 @@ export async function getPlayersByLeague(league_name: string): Promise<Player[]>
   return (data ?? []) as Player[];
 }
 
+export async function getPlayersByClubInLeague(leagueName: string, clubName: string): Promise<Player[]> {
+  const supabase = getSupabaseClient();
+
+  const { data, error } = await supabase
+    .from(TABLE_NAME)
+    .select(PLAYER_SELECT)
+    .eq("league_name", leagueName)
+    .eq("club_name", clubName)
+    .order("overall", { ascending: false, nullsFirst: false })
+    .limit(100);
+
+  if (error) {
+    throw new Error(`Failed to fetch players by club and league: ${error.message}`);
+  }
+
+  return (data ?? []) as Player[];
+}
+
 export async function getTopPlayers(limit: number): Promise<Player[]> {
   const supabase = getSupabaseClient();
 
@@ -104,20 +124,93 @@ export async function getTopPlayers(limit: number): Promise<Player[]> {
   return (data ?? []) as Player[];
 }
 
-export async function getLeagues(limit = 200): Promise<string[]> {
+export async function getLeagues(): Promise<string[]> {
   const supabase = getSupabaseClient();
+  const leagues = new Set<string>();
+  let from = 0;
+  let pageCount = 0;
 
-  const { data, error } = await supabase
-    .from(TABLE_NAME)
-    .select("league_name")
-    .not("league_name", "is", null)
-    .order("league_name", { ascending: true })
-    .limit(limit);
+  while (true) {
+    if (pageCount >= MAX_PAGES) {
+      console.warn(
+        `Reached MAX_PAGES (${MAX_PAGES}) while loading leagues from ${TABLE_NAME}; results may be truncated.`,
+      );
+      break;
+    }
 
-  if (error) {
-    throw new Error(`Failed to fetch leagues: ${error.message}`);
+    const { data, error } = await supabase
+      .from(TABLE_NAME)
+      .select("league_name")
+      .not("league_name", "is", null)
+      .order("league_name", { ascending: true, nullsFirst: false })
+      .range(from, from + DEFAULT_PAGE_SIZE - 1);
+
+    if (error) {
+      throw new Error(`Failed to fetch leagues: ${error.message}`);
+    }
+
+    const rows = (data ?? []) as Array<{ league_name: string | null }>;
+
+    for (const row of rows) {
+      const leagueName = row.league_name?.trim();
+      if (leagueName) {
+        leagues.add(leagueName);
+      }
+    }
+
+    if (rows.length < DEFAULT_PAGE_SIZE) {
+      break;
+    }
+
+    from += DEFAULT_PAGE_SIZE;
+    pageCount += 1;
   }
 
-  const leagues = (data ?? []) as Array<{ league_name: string }>;
-  return [...new Set(leagues.map((row) => row.league_name))];
+  return Array.from(leagues).sort((a, b) => a.localeCompare(b));
+}
+
+export async function getClubsByLeague(leagueName: string): Promise<string[]> {
+  const supabase = getSupabaseClient();
+  const clubs = new Set<string>();
+  let from = 0;
+  let pageCount = 0;
+
+  while (true) {
+    if (pageCount >= MAX_PAGES) {
+      console.warn(
+        `Reached MAX_PAGES (${MAX_PAGES}) while loading clubs for league "${leagueName}" from ${TABLE_NAME}; results may be truncated.`,
+      );
+      break;
+    }
+
+    const { data, error } = await supabase
+      .from(TABLE_NAME)
+      .select("club_name")
+      .eq("league_name", leagueName)
+      .not("club_name", "is", null)
+      .order("club_name", { ascending: true, nullsFirst: false })
+      .range(from, from + DEFAULT_PAGE_SIZE - 1);
+
+    if (error) {
+      throw new Error(`Failed to fetch clubs by league: ${error.message}`);
+    }
+
+    const rows = (data ?? []) as Array<{ club_name: string | null }>;
+
+    for (const row of rows) {
+      const clubName = row.club_name?.trim();
+      if (clubName) {
+        clubs.add(clubName);
+      }
+    }
+
+    if (rows.length < DEFAULT_PAGE_SIZE) {
+      break;
+    }
+
+    from += DEFAULT_PAGE_SIZE;
+    pageCount += 1;
+  }
+
+  return Array.from(clubs).sort((a, b) => a.localeCompare(b));
 }
