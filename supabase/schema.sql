@@ -21,7 +21,7 @@ create index if not exists leagues_country_idx on leagues(country);
 
 create table if not exists clubs (
   id uuid primary key default gen_random_uuid(),
-  league_id uuid not null references leagues(id) on delete cascade,
+  league_id uuid references leagues(id) on delete cascade,
   name text not null,
   reputation integer not null,
   finances bigint not null default 0,
@@ -76,8 +76,10 @@ create table if not exists competitions (
 
 create table if not exists seasons (
   id uuid primary key default gen_random_uuid(),
+  year integer not null default extract(year from now())::integer,
   label text not null unique,
   current_matchday integer not null default 1,
+  status text not null default 'active' check (status in ('active', 'completed')),
   started_at timestamptz not null default now()
 );
 
@@ -85,8 +87,11 @@ create table if not exists matches (
   id uuid primary key default gen_random_uuid(),
   season_id uuid not null references seasons(id) on delete cascade,
   competition_id uuid references competitions(id) on delete set null,
+  league_id uuid not null references leagues(id) on delete cascade,
   home_club_id uuid not null references clubs(id) on delete cascade,
   away_club_id uuid not null references clubs(id) on delete cascade,
+  matchday integer not null default 1,
+  status text not null default 'scheduled' check (status in ('scheduled', 'completed')),
   home_goals integer,
   away_goals integer,
   xg_home numeric,
@@ -96,6 +101,20 @@ create table if not exists matches (
   played_at timestamptz
 );
 create index if not exists matches_season_idx on matches(season_id);
+create index if not exists matches_season_league_idx on matches(season_id, league_id);
+create index if not exists matches_season_matchday_idx on matches(season_id, matchday);
+create index if not exists matches_status_idx on matches(status);
+
+alter table clubs alter column league_id drop not null;
+alter table seasons add column if not exists year integer not null default extract(year from now())::integer;
+alter table seasons add column if not exists status text not null default 'active';
+alter table seasons drop constraint if exists seasons_status_check;
+alter table seasons add constraint seasons_status_check check (status in ('active', 'completed'));
+alter table matches add column if not exists league_id uuid references leagues(id) on delete cascade;
+alter table matches add column if not exists matchday integer not null default 1;
+alter table matches add column if not exists status text not null default 'scheduled';
+alter table matches drop constraint if exists matches_status_check;
+alter table matches add constraint matches_status_check check (status in ('scheduled', 'completed'));
 
 create table if not exists standings (
   id uuid primary key default gen_random_uuid(),

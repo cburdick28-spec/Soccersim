@@ -1087,6 +1087,6 @@ select
 from generate_series(1, 110) as s(i)
 on conflict (nation) do nothing;
 
-insert into seasons (label, current_matchday)
-values ('2026/2027', 1)
+insert into seasons (year, label, current_matchday, status)
+values (2026, '2026/2027', 1, 'active')
 on conflict (label) do nothing;

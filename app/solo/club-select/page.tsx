@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { initializeSeason } from "@/lib/game/seasonEngine";
 import { getClubsByLeague, getLeagues, type Club, type League } from "@/lib/players";
 
 export default function ClubSelectPage() {
@@ -12,6 +13,8 @@ export default function ClubSelectPage() {
   const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [clubsInSelectedLeague, setClubsInSelectedLeague] = useState<Club[]>([]);
+  const [isStartingCareer, setIsStartingCareer] = useState(false);
+  const [startCareerError, setStartCareerError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -74,11 +77,22 @@ export default function ClubSelectPage() {
     };
   }, [selectedLeagueId]);
 
-  const handleStartCareer = () => {
-    if (selectedClubId && selectedLeagueId) {
+  const handleStartCareer = async () => {
+    if (!selectedClubId || !selectedLeagueId || isStartingCareer) {
+      return;
+    }
+
+    try {
+      setIsStartingCareer(true);
+      setStartCareerError(null);
+      await initializeSeason();
       router.push(
         `/solo/game?leagueId=${encodeURIComponent(selectedLeagueId)}&clubId=${encodeURIComponent(selectedClubId)}`,
       );
+    } catch (error: unknown) {
+      setStartCareerError(error instanceof Error ? error.message : "Failed to initialize season.");
+    } finally {
+      setIsStartingCareer(false);
     }
   };
 
@@ -168,18 +182,20 @@ export default function ClubSelectPage() {
 
       <div className="flex gap-3">
         <button
-          onClick={handleStartCareer}
-          disabled={!selectedClubId || !selectedLeagueId}
+          onClick={() => void handleStartCareer()}
+          disabled={!selectedClubId || !selectedLeagueId || isStartingCareer}
           className="rounded-md bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50 disabled:cursor-not-allowed"
           type="button"
         >
-          Start Career as{" "}
-          {clubsInSelectedLeague.find((club) => club.id === selectedClubId)?.name ?? "..."}
+          {isStartingCareer
+            ? "Initializing Season..."
+            : `Start Career as ${clubsInSelectedLeague.find((club) => club.id === selectedClubId)?.name ?? "..."}`}
         </button>
         <Link href="/solo" className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200">
           Back
         </Link>
       </div>
+      {startCareerError && <p className="text-sm text-amber-300">{startCareerError}</p>}
     </main>
   );
 }
