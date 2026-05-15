@@ -10,14 +10,229 @@ insert into competitions (name, type, prize_money, reputation) values
   ('Domestic Cup', 'domestic', 12000000, 78)
 on conflict (name) do nothing;
 
+with target_leagues as (
+  select * from (
+    values
+      ('Premier League', 'England', 95, 1),
+      ('Championship', 'England', 84, 2),
+      ('League One', 'England', 75, 3),
+      ('La Liga', 'Spain', 94, 1),
+      ('La Liga 2', 'Spain', 82, 2),
+      ('Primera RFEF', 'Spain', 72, 3),
+      ('Serie A', 'Italy', 93, 1),
+      ('Serie B', 'Italy', 81, 2),
+      ('Bundesliga', 'Germany', 92, 1),
+      ('2. Bundesliga', 'Germany', 80, 2),
+      ('Ligue 1', 'France', 90, 1),
+      ('Ligue 2', 'France', 78, 2),
+      ('Eredivisie', 'Netherlands', 88, 1),
+      ('Primeira Liga', 'Portugal', 86, 1),
+      ('Belgian Pro League', 'Belgium', 83, 1),
+      ('Super Lig', 'Turkey', 82, 1),
+      ('Brasileirao', 'Brazil', 91, 1),
+      ('Serie B Brasil', 'Brazil', 78, 2),
+      ('Liga Profesional', 'Argentina', 89, 1),
+      ('Primera Nacional', 'Argentina', 76, 2),
+      ('MLS', 'United States', 80, 1),
+      ('Liga MX', 'Mexico', 84, 1),
+      ('Scottish Premiership', 'Scotland', 79, 1),
+      ('Scottish Championship', 'Scotland', 70, 2),
+      ('Saudi Pro League', 'Saudi Arabia', 81, 1),
+      ('J1 League', 'Japan', 80, 1),
+      ('J2 League', 'Japan', 72, 2),
+      ('K League 1', 'South Korea', 79, 1),
+      ('A-League', 'Australia', 74, 1),
+      ('Danish Superliga', 'Denmark', 78, 1),
+      ('Swiss Super League', 'Switzerland', 78, 1),
+      ('Austrian Bundesliga', 'Austria', 77, 1),
+      ('Greek Super League', 'Greece', 76, 1),
+      ('Polish Ekstraklasa', 'Poland', 75, 1),
+      ('Czech First League', 'Czech Republic', 74, 1),
+      ('Ukrainian Premier League', 'Ukraine', 74, 1),
+      ('Romanian SuperLiga', 'Romania', 72, 1),
+      ('Serbian SuperLiga', 'Serbia', 73, 1),
+      ('Croatian League', 'Croatia', 73, 1),
+      ('Norwegian Eliteserien', 'Norway', 74, 1),
+      ('Swedish Allsvenskan', 'Sweden', 75, 1),
+      ('Finnish Veikkausliiga', 'Finland', 70, 1),
+      ('Chinese Super League', 'China', 76, 1),
+      ('Indian Super League', 'India', 68, 1),
+      ('South African Premiership', 'South Africa', 71, 1),
+      ('Egyptian Premier League', 'Egypt', 73, 1),
+      ('Moroccan Botola', 'Morocco', 71, 1),
+      ('Colombian Primera A', 'Colombia', 77, 1),
+      ('Chilean Primera Division', 'Chile', 75, 1),
+      ('Peruvian Liga 1', 'Peru', 72, 1)
+  ) as x(name, country, reputation, tier)
+)
 insert into leagues (name, country, reputation, tier)
+select tl.name, tl.country, tl.reputation, tl.tier
+from target_leagues tl
+where not exists (
+  select 1
+  from leagues l
+  where l.name = tl.name and l.country = tl.country
+);
+
+with target_leagues as (
+  select l.id, l.name, l.country, l.reputation
+  from leagues l
+  where (l.name, l.country) in (
+    values
+      ('Premier League', 'England'),
+      ('Championship', 'England'),
+      ('League One', 'England'),
+      ('La Liga', 'Spain'),
+      ('La Liga 2', 'Spain'),
+      ('Primera RFEF', 'Spain'),
+      ('Serie A', 'Italy'),
+      ('Serie B', 'Italy'),
+      ('Bundesliga', 'Germany'),
+      ('2. Bundesliga', 'Germany'),
+      ('Ligue 1', 'France'),
+      ('Ligue 2', 'France'),
+      ('Eredivisie', 'Netherlands'),
+      ('Primeira Liga', 'Portugal'),
+      ('Belgian Pro League', 'Belgium'),
+      ('Super Lig', 'Turkey'),
+      ('Brasileirao', 'Brazil'),
+      ('Serie B Brasil', 'Brazil'),
+      ('Liga Profesional', 'Argentina'),
+      ('Primera Nacional', 'Argentina'),
+      ('MLS', 'United States'),
+      ('Liga MX', 'Mexico'),
+      ('Scottish Premiership', 'Scotland'),
+      ('Scottish Championship', 'Scotland'),
+      ('Saudi Pro League', 'Saudi Arabia'),
+      ('J1 League', 'Japan'),
+      ('J2 League', 'Japan'),
+      ('K League 1', 'South Korea'),
+      ('A-League', 'Australia'),
+      ('Danish Superliga', 'Denmark'),
+      ('Swiss Super League', 'Switzerland'),
+      ('Austrian Bundesliga', 'Austria'),
+      ('Greek Super League', 'Greece'),
+      ('Polish Ekstraklasa', 'Poland'),
+      ('Czech First League', 'Czech Republic'),
+      ('Ukrainian Premier League', 'Ukraine'),
+      ('Romanian SuperLiga', 'Romania'),
+      ('Serbian SuperLiga', 'Serbia'),
+      ('Croatian League', 'Croatia'),
+      ('Norwegian Eliteserien', 'Norway'),
+      ('Swedish Allsvenskan', 'Sweden'),
+      ('Finnish Veikkausliiga', 'Finland'),
+      ('Chinese Super League', 'China'),
+      ('Indian Super League', 'India'),
+      ('South African Premiership', 'South Africa'),
+      ('Egyptian Premier League', 'Egypt'),
+      ('Moroccan Botola', 'Morocco'),
+      ('Colombian Primera A', 'Colombia'),
+      ('Chilean Primera Division', 'Chile'),
+      ('Peruvian Liga 1', 'Peru')
+  )
+)
+insert into clubs (league_id, name, reputation, finances)
 select
-  format('League %s', s.i),
-  format('Nation %s', ((s.i - 1) % 50) + 1),
-  greatest(45, 95 - s.i),
-  case when s.i <= 20 then 1 else 2 end
-from generate_series(1, 50) as s(i)
-on conflict do nothing;
+  tl.id,
+  format('%s Club %s', tl.name, club_index.i),
+  greatest(45, tl.reputation - ((club_index.i - 1) % 18)),
+  25000000 + club_index.i * 800000
+from target_leagues tl
+cross join generate_series(1, 20) as club_index(i)
+where not exists (
+  select 1
+  from clubs c
+  where c.league_id = tl.id and c.name = format('%s Club %s', tl.name, club_index.i)
+);
+
+with target_clubs as (
+  select c.id, c.name, l.country
+  from clubs c
+  join leagues l on l.id = c.league_id
+  where (l.name, l.country) in (
+    values
+      ('Premier League', 'England'),
+      ('Championship', 'England'),
+      ('League One', 'England'),
+      ('La Liga', 'Spain'),
+      ('La Liga 2', 'Spain'),
+      ('Primera RFEF', 'Spain'),
+      ('Serie A', 'Italy'),
+      ('Serie B', 'Italy'),
+      ('Bundesliga', 'Germany'),
+      ('2. Bundesliga', 'Germany'),
+      ('Ligue 1', 'France'),
+      ('Ligue 2', 'France'),
+      ('Eredivisie', 'Netherlands'),
+      ('Primeira Liga', 'Portugal'),
+      ('Belgian Pro League', 'Belgium'),
+      ('Super Lig', 'Turkey'),
+      ('Brasileirao', 'Brazil'),
+      ('Serie B Brasil', 'Brazil'),
+      ('Liga Profesional', 'Argentina'),
+      ('Primera Nacional', 'Argentina'),
+      ('MLS', 'United States'),
+      ('Liga MX', 'Mexico'),
+      ('Scottish Premiership', 'Scotland'),
+      ('Scottish Championship', 'Scotland'),
+      ('Saudi Pro League', 'Saudi Arabia'),
+      ('J1 League', 'Japan'),
+      ('J2 League', 'Japan'),
+      ('K League 1', 'South Korea'),
+      ('A-League', 'Australia'),
+      ('Danish Superliga', 'Denmark'),
+      ('Swiss Super League', 'Switzerland'),
+      ('Austrian Bundesliga', 'Austria'),
+      ('Greek Super League', 'Greece'),
+      ('Polish Ekstraklasa', 'Poland'),
+      ('Czech First League', 'Czech Republic'),
+      ('Ukrainian Premier League', 'Ukraine'),
+      ('Romanian SuperLiga', 'Romania'),
+      ('Serbian SuperLiga', 'Serbia'),
+      ('Croatian League', 'Croatia'),
+      ('Norwegian Eliteserien', 'Norway'),
+      ('Swedish Allsvenskan', 'Sweden'),
+      ('Finnish Veikkausliiga', 'Finland'),
+      ('Chinese Super League', 'China'),
+      ('Indian Super League', 'India'),
+      ('South African Premiership', 'South Africa'),
+      ('Egyptian Premier League', 'Egypt'),
+      ('Moroccan Botola', 'Morocco'),
+      ('Colombian Primera A', 'Colombia'),
+      ('Chilean Primera Division', 'Chile'),
+      ('Peruvian Liga 1', 'Peru')
+  )
+)
+insert into players (
+  club_id, name, age, nationality, preferred_position, potential,
+  pace, shooting, passing, dribbling, defending, physical
+)
+select
+  tc.id,
+  format('%s Player %s', tc.name, player_index.i),
+  17 + ((player_index.i * 3 + length(tc.name)) % 18),
+  tc.country,
+  case
+    when player_index.i <= 2 then 'GK'
+    when player_index.i <= 6 then 'DEF'
+    when player_index.i <= 12 then 'MID'
+    when player_index.i <= 18 then 'ATT'
+    else 'SUB'
+  end,
+  58 + ((player_index.i * 2 + length(tc.name)) % 35),
+  50 + ((player_index.i * 3 + length(tc.name)) % 45),
+  50 + ((player_index.i * 5 + length(tc.name)) % 45),
+  50 + ((player_index.i * 7 + length(tc.name)) % 45),
+  50 + ((player_index.i * 11 + length(tc.name)) % 45),
+  50 + ((player_index.i * 13 + length(tc.name)) % 45),
+  50 + ((player_index.i * 17 + length(tc.name)) % 45)
+from target_clubs tc
+cross join generate_series(1, 25) as player_index(i)
+where not exists (
+  select 1
+  from players p
+  where p.club_id = tc.id and p.name = format('%s Player %s', tc.name, player_index.i)
+);
 
 insert into national_team_jobs (nation, reputation_required)
 select
