@@ -124,7 +124,7 @@ export async function getTopPlayers(limit: number): Promise<Player[]> {
   return (data ?? []) as Player[];
 }
 
-export async function getLeagues(pageSize = DEFAULT_PAGE_SIZE): Promise<string[]> {
+export async function getLeagues(): Promise<string[]> {
   const supabase = getSupabaseClient();
   const leagues = new Set<string>();
   let from = 0;
@@ -142,7 +142,8 @@ export async function getLeagues(pageSize = DEFAULT_PAGE_SIZE): Promise<string[]
       .from(TABLE_NAME)
       .select("league_name")
       .not("league_name", "is", null)
-      .range(from, from + pageSize - 1);
+      .order("league_name", { ascending: true, nullsFirst: false })
+      .range(from, from + DEFAULT_PAGE_SIZE - 1);
 
     if (error) {
       throw new Error(`Failed to fetch leagues: ${error.message}`);
@@ -157,18 +158,18 @@ export async function getLeagues(pageSize = DEFAULT_PAGE_SIZE): Promise<string[]
       }
     }
 
-    if (rows.length < pageSize) {
+    if (rows.length < DEFAULT_PAGE_SIZE) {
       break;
     }
 
-    from += pageSize;
+    from += DEFAULT_PAGE_SIZE;
     pageCount += 1;
   }
 
   return Array.from(leagues).sort((a, b) => a.localeCompare(b));
 }
 
-export async function getClubsByLeague(leagueName: string, pageSize = DEFAULT_PAGE_SIZE): Promise<string[]> {
+export async function getClubsByLeague(leagueName: string): Promise<string[]> {
   const supabase = getSupabaseClient();
   const clubs = new Set<string>();
   let from = 0;
@@ -187,7 +188,8 @@ export async function getClubsByLeague(leagueName: string, pageSize = DEFAULT_PA
       .select("club_name")
       .eq("league_name", leagueName)
       .not("club_name", "is", null)
-      .range(from, from + pageSize - 1);
+      .order("club_name", { ascending: true, nullsFirst: false })
+      .range(from, from + DEFAULT_PAGE_SIZE - 1);
 
     if (error) {
       throw new Error(`Failed to fetch clubs by league: ${error.message}`);
@@ -202,11 +204,11 @@ export async function getClubsByLeague(leagueName: string, pageSize = DEFAULT_PA
       }
     }
 
-    if (rows.length < pageSize) {
+    if (rows.length < DEFAULT_PAGE_SIZE) {
       break;
     }
 
-    from += pageSize;
+    from += DEFAULT_PAGE_SIZE;
     pageCount += 1;
   }
 
