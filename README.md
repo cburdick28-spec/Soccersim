@@ -59,11 +59,6 @@ Pocket Manager Online is a browser-first football management simulation built wi
    - `/supabase/seed.sql`
 4. Enable Realtime for `multiplayer_lobbies`, `messages`, and `notifications` tables.
 
-## Username Auth Mapping
-
-- Input: `ConnorB`
-- Internal email used with Supabase Auth: `connorb@pocketmanager.local`
-
 ## Testing & Quality
 
 ```bash
@@ -85,4 +80,3 @@ npm run build
 
 - Client flow disables cheats in multiplayer for regular users.
 - Supabase policy `league_settings_no_cheat` enforces server-side restriction.
-- `ConnorB` (mapped to `connorb`) is recognized as global admin.
