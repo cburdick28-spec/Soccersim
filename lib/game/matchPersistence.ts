@@ -54,7 +54,7 @@ async function getCurrentSeasonMatchday(seasonId: string): Promise<number> {
     throw new Error(`Failed to fetch current matchday: ${error?.message ?? "No season available"}`);
   }
 
-  return ((data as { current_matchday: number }).current_matchday ?? 1);
+  return (data as { current_matchday: number }).current_matchday ?? 1;
 }
 
 async function upsertStanding(params: {

@@ -165,10 +165,10 @@ export async function assignClubsToLeagues(clubs: ClubRow[], leagues: LeagueRow[
   }
 
   const sortedClubs = [...clubs].sort(
-    (a, b) => b.reputation - a.reputation || a.name.localeCompare(b.name),
+    (a, b) => b.reputation - a.reputation || a.name.localeCompare(b.name, "en"),
   );
   const sortedLeagues = [...leagues].sort(
-    (a, b) => a.tier - b.tier || b.reputation - a.reputation || a.id.localeCompare(b.id),
+    (a, b) => a.tier - b.tier || b.reputation - a.reputation || a.id.localeCompare(b.id, "en"),
   );
   const distributed = chunkEvenly(sortedClubs, sortedLeagues.length);
 
@@ -264,8 +264,8 @@ export async function generateSeasonMatchdays(seasonId?: string): Promise<void> 
     const sorted = [...leagueMatches].sort(
       (a, b) =>
         a.matchday - b.matchday ||
-        a.home_club_id.localeCompare(b.home_club_id) ||
-        a.away_club_id.localeCompare(b.away_club_id),
+        a.home_club_id.localeCompare(b.home_club_id, "en") ||
+        a.away_club_id.localeCompare(b.away_club_id, "en"),
     );
 
     let currentSlot = 1;
