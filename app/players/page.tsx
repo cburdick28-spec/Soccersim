@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { getPlayers, getPlayersByLeague, searchPlayers } from "@/lib/players";
+import { getLeagues, getPlayers, getPlayersByLeague, searchPlayers } from "@/lib/players";
 import type { Player } from "@/types/player";
 
 function formatCurrency(value: number | null): string {
@@ -14,12 +14,6 @@ function formatCurrency(value: number | null): string {
     currency: "EUR",
     maximumFractionDigits: 0,
   }).format(value);
-}
-
-function getUniqueLeagues(players: Player[]): string[] {
-  return [...new Set(players.map((player) => player.league_name).filter(Boolean) as string[])].sort(
-    (a, b) => a.localeCompare(b),
-  );
 }
 
 export default function PlayersPage() {
@@ -38,14 +32,14 @@ export default function PlayersPage() {
       setError(null);
 
       try {
-        const [initialPlayers, leagueSeedPlayers] = await Promise.all([getPlayers(50), getPlayers(500)]);
+        const [initialPlayers, availableLeagues] = await Promise.all([getPlayers(50), getLeagues()]);
 
         if (!isMounted) {
           return;
         }
 
         setPlayers(initialPlayers);
-        setLeagues(getUniqueLeagues(leagueSeedPlayers));
+        setLeagues(availableLeagues);
       } catch (loadError) {
         if (!isMounted) {
           return;
@@ -83,10 +77,6 @@ export default function PlayersPage() {
         result = await getPlayersByLeague(selectedLeague);
       } else {
         result = await getPlayers(50);
-      }
-
-      if (selectedLeague) {
-        result = result.filter((player) => player.league_name === selectedLeague);
       }
 
       setPlayers(result);
