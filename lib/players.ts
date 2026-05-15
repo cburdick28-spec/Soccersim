@@ -18,8 +18,6 @@ export async function getPlayers(limit = 50): Promise<Player[]> {
     throw new Error(`Failed to fetch players: ${error.message}`);
   }
 
-  console.log("Supabase player:", data?.[0]);
-
   return (data ?? []) as Player[];
 }
 

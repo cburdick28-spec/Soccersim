@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getPlayersByLeague } from "@/lib/players";
+import { clubsByLeague } from "@/lib/game/world";
 
 type SoloGamePageProps = {
   searchParams: Promise<{ club?: string; league?: string }>;
@@ -9,10 +9,10 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
   const { club, league } = await searchParams;
   const selectedClub = club?.trim();
   const selectedLeague = league?.trim();
-  const selectedClubPlayers =
+  const selectedClubData =
     selectedClub && selectedLeague
-      ? (await getPlayersByLeague(selectedLeague)).filter((player) => player.club_name === selectedClub)
-      : [];
+      ? (clubsByLeague[selectedLeague] ?? []).find((clubSeed) => clubSeed.name === selectedClub)
+      : undefined;
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-6 px-4 py-8 sm:px-6">
@@ -30,16 +30,19 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
         {selectedLeague && <p className="mt-2 text-xs text-slate-400">League: {selectedLeague}</p>}
       </section>
 
-      {selectedClubPlayers.length > 0 && (
+      {selectedClubData && (
         <section className="panel p-6">
           <h2 className="text-lg font-semibold">Squad Preview</h2>
-          <p className="mt-1 text-xs text-slate-400">{selectedClubPlayers.length} players loaded</p>
+          <p className="mt-1 text-xs text-slate-400">
+            {selectedClubData.players.length} players loaded • Rep {selectedClubData.reputation} • Mgr{" "}
+            {selectedClubData.managerQuality} • Budget ${selectedClubData.financeBalance.toLocaleString()}
+          </p>
           <ul className="mt-4 grid gap-2 text-sm text-slate-300 sm:grid-cols-2 lg:grid-cols-3">
-            {selectedClubPlayers.slice(0, 18).map((player) => (
-              <li key={player.id} className="rounded-md border border-slate-800 px-3 py-2">
-                <span className="font-medium">{player.short_name}</span>
+            {selectedClubData.players.slice(0, 18).map((player) => (
+              <li key={player.name} className="rounded-md border border-slate-800 px-3 py-2">
+                <span className="font-medium">{player.name}</span>
                 <p className="text-xs text-slate-400">
-                  {player.player_positions ?? "—"} • {player.age} • {player.nationality_name ?? "—"}
+                  {player.preferredPosition} • {player.age} • {player.nationality}
                 </p>
                 <p className="text-xs text-slate-500">
                   OVR {player.overall} • POT {player.potential} • PAC {player.pace} • SHO {player.shooting} • PAS{" "}
@@ -51,7 +54,7 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
         </section>
       )}
 
-      {selectedClub && selectedLeague && selectedClubPlayers.length === 0 && (
+      {selectedClub && selectedLeague && !selectedClubData && (
         <section className="panel p-6">
           <p className="text-sm text-amber-300">
             No squad data found for this club. Please reselect your league and club.

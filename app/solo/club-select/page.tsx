@@ -2,92 +2,35 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { getLeagues, getPlayersByLeague } from "@/lib/players";
-import type { Player } from "@/types/player";
+import { useMemo, useState } from "react";
+import { clubsByLeague, getLeagueKey, topLeagues } from "@/lib/game/world";
 
 export default function ClubSelectPage() {
   const router = useRouter();
-  const [allLeagues, setAllLeagues] = useState<string[]>([]);
   const [selectedLeagueKey, setSelectedLeagueKey] = useState<string | null>(null);
   const [selectedClub, setSelectedClub] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [leaguePlayers, setLeaguePlayers] = useState<Player[]>([]);
 
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadLeagues() {
-      try {
-        const leagues = await getLeagues();
-        if (!isMounted) {
-          return;
-        }
-        setAllLeagues(leagues);
-      } catch {
-        if (!isMounted) {
-          return;
-        }
-        setAllLeagues([]);
-      }
-    }
-
-    void loadLeagues();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  const allLeagues = useMemo(() => topLeagues, []);
 
   const filteredLeagues = useMemo(
     () =>
-      allLeagues.filter((league) => league.toLowerCase().includes(searchQuery.toLowerCase())),
+      allLeagues.filter((league) =>
+        league.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        league.country.toLowerCase().includes(searchQuery.toLowerCase())
+      ),
     [allLeagues, searchQuery]
   );
 
-  useEffect(() => {
-    let isMounted = true;
+  const selectedLeague = useMemo(
+    () => allLeagues.find((league) => getLeagueKey(league) === selectedLeagueKey),
+    [allLeagues, selectedLeagueKey],
+  );
 
-    async function loadLeaguePlayers() {
-      if (!selectedLeagueKey) {
-        setLeaguePlayers([]);
-        return;
-      }
-
-      try {
-        const players = await getPlayersByLeague(selectedLeagueKey);
-        if (!isMounted) {
-          return;
-        }
-        setLeaguePlayers(players);
-      } catch {
-        if (!isMounted) {
-          return;
-        }
-        setLeaguePlayers([]);
-      }
-    }
-
-    void loadLeaguePlayers();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [selectedLeagueKey]);
-
-  const clubsInSelectedLeague = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const player of leaguePlayers) {
-      const clubName = player.club_name?.trim();
-      if (!clubName) {
-        continue;
-      }
-      counts.set(clubName, (counts.get(clubName) ?? 0) + 1);
-    }
-    return Array.from(counts.entries())
-      .map(([name, playerCount]) => ({ name, playerCount }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [leaguePlayers]);
+  const clubsInSelectedLeague = useMemo(
+    () => (selectedLeagueKey ? clubsByLeague[selectedLeagueKey] ?? [] : []),
+    [selectedLeagueKey],
+  );
 
   const handleStartCareer = () => {
     if (selectedClub && selectedLeagueKey) {
@@ -108,10 +51,10 @@ export default function ClubSelectPage() {
 
       <section className="panel p-6">
         <label className="mb-4 block">
-          <span className="text-sm font-semibold">Search Leagues</span>
+          <span className="text-sm font-semibold">Search Leagues or Countries</span>
           <input
             type="text"
-            placeholder="e.g., Premier League, La Liga..."
+            placeholder="e.g., Premier League, England, La Liga..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="mt-2 w-full rounded-md border border-slate-700 bg-slate-900/50 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-sky-400 focus:outline-none"
@@ -121,18 +64,19 @@ export default function ClubSelectPage() {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {filteredLeagues.map((league) => (
             <button
-              key={league}
+              key={`${league.name}-${league.country}`}
               onClick={() => {
-                setSelectedLeagueKey(league);
+                setSelectedLeagueKey(getLeagueKey(league));
                 setSelectedClub(null);
               }}
               className={`rounded-lg border px-4 py-3 text-left transition ${
-                selectedLeagueKey === league
+                selectedLeagueKey === getLeagueKey(league)
                   ? "border-sky-400 bg-sky-500/15 text-sky-200"
                   : "border-slate-700 text-slate-200 hover:border-slate-600"
               }`}
             >
-              <span className="font-medium">{league}</span>
+              <span className="font-medium">{league.name}</span>
+              <p className="mt-1 text-xs text-slate-400">{league.country}</p>
             </button>
           ))}
         </div>
@@ -144,9 +88,10 @@ export default function ClubSelectPage() {
         )}
       </section>
 
-      {selectedLeagueKey && (
+      {selectedLeague && (
         <section className="panel p-6">
-          <h2 className="text-lg font-semibold">Clubs in {selectedLeagueKey}</h2>
+          <h2 className="text-lg font-semibold">Clubs in {selectedLeague.name}</h2>
+          <p className="mt-1 text-xs text-slate-400">{selectedLeague.country}</p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {clubsInSelectedLeague.map((club) => (
               <button
@@ -159,7 +104,9 @@ export default function ClubSelectPage() {
                 }`}
               >
                 <span className="font-medium">{club.name}</span>
-                <p className="mt-1 text-xs text-slate-400">{club.playerCount} players</p>
+                <p className="mt-1 text-xs text-slate-400">
+                  {club.players.length} players • Rep {club.reputation} • Mgr {club.managerQuality}
+                </p>
               </button>
             ))}
           </div>
@@ -170,10 +117,10 @@ export default function ClubSelectPage() {
         <p className="text-xs text-slate-400">
           <strong>{filteredLeagues.length}</strong> leagues available
           {searchQuery && ` matching &quot;${searchQuery}&quot;`}
-          {selectedLeagueKey && (
+          {selectedLeague && (
             <>
               {" "}
-              • <strong>{clubsInSelectedLeague.length}</strong> clubs in {selectedLeagueKey}
+              • <strong>{clubsInSelectedLeague.length}</strong> clubs in {selectedLeague.name}
             </>
           )}
         </p>
