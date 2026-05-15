@@ -9,6 +9,14 @@ export type PlayerSeed = {
   age: number;
   nationality: string;
   preferredPosition: string;
+  potential: number;
+  overall: number;
+  pace: number;
+  shooting: number;
+  passing: number;
+  dribbling: number;
+  defending: number;
+  physical: number;
 };
 
 export type ClubSeed = {
@@ -1173,17 +1181,127 @@ const getClubStats = (league: LeagueSeed, index: number, clubCount: number) => {
   return { reputation, managerQuality, financeBalance, tacticalStyle };
 };
 
-const buildPlayers = (clubName: string, country: string): PlayerSeed[] => {
+const clampStat = (value: number, min = 35, max = 99) => Math.max(min, Math.min(max, Math.round(value)));
+
+const hashString = (value: string) =>
+  value.split("").reduce((accumulator, character) => accumulator + character.charCodeAt(0), 0);
+
+const defaultFirstNames = [
+  "Alex", "Daniel", "Mateo", "Leo", "Nico", "Marco", "Lucas", "Adrian", "Bruno", "Ruben",
+  "David", "Felix", "Oscar", "Paulo", "Rafael", "Victor", "Jules", "Noah", "Hugo", "Andre",
+];
+
+const defaultLastNames = [
+  "Silva", "Garcia", "Martinez", "Lopez", "Fernandes", "Kovacic", "Berg", "Santos", "Costa", "Ramos",
+  "Muller", "Nielsen", "Pereira", "Alvarez", "Sanchez", "Ibrahim", "Yilmaz", "Novak", "Petrovic", "Khan",
+];
+
+const playerNamePoolsByCountry: Record<string, { first: string[]; last: string[] }> = {
+  England: {
+    first: ["James", "Jack", "Harry", "Mason", "Declan", "Callum", "Lewis", "Ben", "Adam", "Ryan"],
+    last: ["Smith", "Jones", "Brown", "Taylor", "Wilson", "Walker", "Miller", "Davies", "Clark", "Baker"],
+  },
+  Spain: {
+    first: ["Alejandro", "Pablo", "Carlos", "Sergio", "Alvaro", "Javier", "Gonzalo", "Iker", "Dani", "Hector"],
+    last: ["Garcia", "Fernandez", "Lopez", "Gomez", "Rodriguez", "Sanchez", "Martin", "Ruiz", "Torres", "Diaz"],
+  },
+  Italy: {
+    first: ["Luca", "Matteo", "Nicolo", "Alessandro", "Francesco", "Davide", "Federico", "Giacomo", "Marco", "Andrea"],
+    last: ["Rossi", "Russo", "Ferrari", "Esposito", "Romano", "Colombo", "Ricci", "Marino", "Greco", "Bruno"],
+  },
+  Germany: {
+    first: ["Lukas", "Jonas", "Timo", "Florian", "Felix", "Leon", "Kai", "Nico", "Mats", "Julian"],
+    last: ["Muller", "Schmidt", "Schneider", "Fischer", "Weber", "Meyer", "Wagner", "Becker", "Hoffmann", "Schulz"],
+  },
+  France: {
+    first: ["Kylian", "Theo", "Antoine", "Olivier", "Nabil", "Amine", "Rayan", "Moussa", "Adrien", "Youssouf"],
+    last: ["Dubois", "Moreau", "Leroy", "Simon", "Laurent", "Michel", "Fontaine", "Garcia", "Roux", "Garnier"],
+  },
+  Brazil: {
+    first: ["Joao", "Pedro", "Gabriel", "Vinicius", "Rafael", "Thiago", "Carlos", "Bruno", "Marcos", "Felipe"],
+    last: ["Silva", "Santos", "Oliveira", "Souza", "Pereira", "Lima", "Costa", "Almeida", "Rocha", "Barbosa"],
+  },
+  Argentina: {
+    first: ["Lionel", "Julian", "Enzo", "Lautaro", "Nicolas", "Franco", "Ezequiel", "Leandro", "Matias", "Agustin"],
+    last: ["Fernandez", "Gonzalez", "Martinez", "Lopez", "Gomez", "Perez", "Diaz", "Romero", "Sosa", "Torres"],
+  },
+  Portugal: {
+    first: ["Joao", "Diogo", "Pedro", "Goncalo", "Tiago", "Rui", "Andre", "Francisco", "Bernardo", "Nuno"],
+    last: ["Silva", "Santos", "Ferreira", "Pereira", "Costa", "Rodrigues", "Gomes", "Martins", "Sousa", "Alves"],
+  },
+  Netherlands: {
+    first: ["Daan", "Noah", "Jens", "Milan", "Thijs", "Sem", "Luuk", "Bram", "Niels", "Tijjani"],
+    last: ["de Jong", "van Dijk", "Bakker", "Visser", "Smit", "Mulder", "Vos", "Peters", "Dekker", "Meijer"],
+  },
+  "United States": {
+    first: ["Tyler", "Brandon", "Christian", "Weston", "Miles", "Jordan", "Aidan", "Cade", "Matthew", "Ethan"],
+    last: ["Johnson", "Williams", "Davis", "Miller", "Anderson", "Thomas", "Moore", "Jackson", "White", "Harris"],
+  },
+};
+
+const getPlayerName = (clubName: string, country: string, index: number) => {
+  const pool = playerNamePoolsByCountry[country];
+  const firstNames = pool?.first ?? defaultFirstNames;
+  const lastNames = pool?.last ?? defaultLastNames;
+  const seed = hashString(`${clubName}-${country}-${index + 1}`);
+  const first = firstNames[seed % firstNames.length] ?? "Alex";
+  const last = lastNames[(seed * 7) % lastNames.length] ?? "Silva";
+  return `${first} ${last}`;
+};
+
+const getPlayerStats = (
+  preferredPosition: string,
+  playerNumber: number,
+  leagueReputation: number,
+  clubReputation: number,
+  clubName: string,
+) => {
+  const seed = hashString(`${clubName}-${playerNumber}`);
+  const positionFactor =
+    preferredPosition === "GK" ? 1 :
+    preferredPosition === "DEF" ? 0.88 :
+    preferredPosition === "MID" ? 0.94 : 0.98;
+
+  const baseOverall = clampStat((clubReputation - 6 + (leagueReputation - 45) * 0.2) * positionFactor + (seed % 9));
+
+  const pace = clampStat(baseOverall + (preferredPosition === "ATT" ? 6 : preferredPosition === "MID" ? 3 : 0) - 6 + (seed % 8));
+  const shooting = clampStat(baseOverall + (preferredPosition === "ATT" ? 9 : preferredPosition === "MID" ? 2 : -7) + (seed % 7));
+  const passing = clampStat(baseOverall + (preferredPosition === "MID" ? 8 : preferredPosition === "ATT" ? 3 : 0) + ((seed >> 1) % 7) - 4);
+  const dribbling = clampStat(baseOverall + (preferredPosition === "ATT" ? 7 : preferredPosition === "MID" ? 5 : -3) + ((seed >> 2) % 7) - 3);
+  const defending = clampStat(baseOverall + (preferredPosition === "DEF" ? 10 : preferredPosition === "MID" ? 3 : -9) + ((seed >> 3) % 7) - 3);
+  const physical = clampStat(baseOverall + (preferredPosition === "DEF" ? 5 : preferredPosition === "GK" ? 6 : 1) + ((seed >> 4) % 6) - 2);
+  const potential = clampStat(baseOverall + 4 + ((30 - playerNumber) % 8), 40, 99);
+
+  return {
+    overall: baseOverall,
+    potential,
+    pace,
+    shooting,
+    passing,
+    dribbling,
+    defending,
+    physical,
+  };
+};
+
+const buildPlayers = (
+  clubName: string,
+  country: string,
+  leagueReputation: number,
+  clubReputation: number,
+): PlayerSeed[] => {
   return Array.from({ length: 25 }, (_, index) => {
     const playerNumber = index + 1;
     const preferredPosition =
       playerNumber <= 2 ? "GK" : playerNumber <= 8 ? "DEF" : playerNumber <= 16 ? "MID" : "ATT";
+    const stats = getPlayerStats(preferredPosition, playerNumber, leagueReputation, clubReputation, clubName);
 
     return {
-      name: `${clubName} Player ${playerNumber}`,
+      name: getPlayerName(clubName, country, index),
       age: 18 + ((playerNumber * 3 + clubName.length) % 17),
       nationality: country,
       preferredPosition,
+      ...stats,
     };
   });
 };
@@ -1200,7 +1318,7 @@ export const clubsByLeague: Record<string, ClubSeed[]> = topLeagues.reduce(
         leagueName: league.name,
         country: league.country,
         ...stats,
-        players: buildPlayers(name, league.country),
+        players: buildPlayers(name, league.country, league.reputation, stats.reputation),
       };
     });
 

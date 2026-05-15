@@ -44,6 +44,10 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
                 <p className="text-xs text-slate-400">
                   {player.preferredPosition} • {player.age} • {player.nationality}
                 </p>
+                <p className="text-xs text-slate-500">
+                  OVR {player.overall} • POT {player.potential} • PAC {player.pace} • SHO {player.shooting} • PAS{" "}
+                  {player.passing}
+                </p>
               </li>
             ))}
           </ul>
