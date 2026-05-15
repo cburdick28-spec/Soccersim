@@ -1181,7 +1181,8 @@ const getClubStats = (league: LeagueSeed, index: number, clubCount: number) => {
   return { reputation, managerQuality, financeBalance, tacticalStyle };
 };
 
-const clampStat = (value: number, min = 35, max = 99) => Math.max(min, Math.min(max, Math.round(value)));
+const clampPlayerRating = (value: number, min = 35, max = 99) =>
+  Math.max(min, Math.min(max, Math.round(value)));
 
 const hashString = (value: string) =>
   value.split("").reduce((accumulator, character) => accumulator + character.charCodeAt(0), 0);
@@ -1249,28 +1250,58 @@ const getPlayerName = (clubName: string, country: string, index: number) => {
   return `${first} ${last}`;
 };
 
+type PlayerRole = "GK" | "DEF" | "MID" | "ATT";
+
+const CLUB_REPUTATION_OFFSET = 6;
+const LEAGUE_REPUTATION_BASE = 45;
+const LEAGUE_WEIGHT_FACTOR = 0.2;
+const OVERALL_SEED_VARIANCE = 9;
+const POTENTIAL_BOOST = 4;
+const POTENTIAL_VARIANCE = 8;
+const POTENTIAL_MIN = 40;
+const ROLE_VARIANCE = 7;
+
+const positionBaseFactors: Record<PlayerRole, number> = {
+  GK: 1,
+  DEF: 0.88,
+  MID: 0.94,
+  ATT: 0.98,
+};
+
+const positionAttributeModifiers: Record<
+  PlayerRole,
+  { pace: number; shooting: number; passing: number; dribbling: number; defending: number; physical: number }
+> = {
+  GK: { pace: 0, shooting: -7, passing: 0, dribbling: -3, defending: -9, physical: 6 },
+  DEF: { pace: 0, shooting: -7, passing: 0, dribbling: -3, defending: 10, physical: 5 },
+  MID: { pace: 3, shooting: 2, passing: 8, dribbling: 5, defending: 3, physical: 1 },
+  ATT: { pace: 6, shooting: 9, passing: 3, dribbling: 7, defending: -9, physical: 1 },
+};
+
 const getPlayerStats = (
-  preferredPosition: string,
+  preferredPosition: PlayerRole,
   playerNumber: number,
   leagueReputation: number,
   clubReputation: number,
   clubName: string,
 ) => {
   const seed = hashString(`${clubName}-${playerNumber}`);
-  const positionFactor =
-    preferredPosition === "GK" ? 1 :
-    preferredPosition === "DEF" ? 0.88 :
-    preferredPosition === "MID" ? 0.94 : 0.98;
+  const positionFactor = positionBaseFactors[preferredPosition];
+  const roleModifiers = positionAttributeModifiers[preferredPosition];
 
-  const baseOverall = clampStat((clubReputation - 6 + (leagueReputation - 45) * 0.2) * positionFactor + (seed % 9));
+  const baseOverall = clampPlayerRating(
+    (clubReputation - CLUB_REPUTATION_OFFSET + (leagueReputation - LEAGUE_REPUTATION_BASE) * LEAGUE_WEIGHT_FACTOR) *
+      positionFactor +
+      (seed % OVERALL_SEED_VARIANCE),
+  );
 
-  const pace = clampStat(baseOverall + (preferredPosition === "ATT" ? 6 : preferredPosition === "MID" ? 3 : 0) - 6 + (seed % 8));
-  const shooting = clampStat(baseOverall + (preferredPosition === "ATT" ? 9 : preferredPosition === "MID" ? 2 : -7) + (seed % 7));
-  const passing = clampStat(baseOverall + (preferredPosition === "MID" ? 8 : preferredPosition === "ATT" ? 3 : 0) + ((seed >> 1) % 7) - 4);
-  const dribbling = clampStat(baseOverall + (preferredPosition === "ATT" ? 7 : preferredPosition === "MID" ? 5 : -3) + ((seed >> 2) % 7) - 3);
-  const defending = clampStat(baseOverall + (preferredPosition === "DEF" ? 10 : preferredPosition === "MID" ? 3 : -9) + ((seed >> 3) % 7) - 3);
-  const physical = clampStat(baseOverall + (preferredPosition === "DEF" ? 5 : preferredPosition === "GK" ? 6 : 1) + ((seed >> 4) % 6) - 2);
-  const potential = clampStat(baseOverall + 4 + ((30 - playerNumber) % 8), 40, 99);
+  const pace = clampPlayerRating(baseOverall + roleModifiers.pace - 6 + (seed % 8));
+  const shooting = clampPlayerRating(baseOverall + roleModifiers.shooting + (seed % ROLE_VARIANCE));
+  const passing = clampPlayerRating(baseOverall + roleModifiers.passing + ((seed >> 1) % ROLE_VARIANCE) - 4);
+  const dribbling = clampPlayerRating(baseOverall + roleModifiers.dribbling + ((seed >> 2) % ROLE_VARIANCE) - 3);
+  const defending = clampPlayerRating(baseOverall + roleModifiers.defending + ((seed >> 3) % ROLE_VARIANCE) - 3);
+  const physical = clampPlayerRating(baseOverall + roleModifiers.physical + ((seed >> 4) % 6) - 2);
+  const potential = clampPlayerRating(baseOverall + POTENTIAL_BOOST + ((30 - playerNumber) % POTENTIAL_VARIANCE), POTENTIAL_MIN, 99);
 
   return {
     overall: baseOverall,
@@ -1292,7 +1323,7 @@ const buildPlayers = (
 ): PlayerSeed[] => {
   return Array.from({ length: 25 }, (_, index) => {
     const playerNumber = index + 1;
-    const preferredPosition =
+    const preferredPosition: PlayerRole =
       playerNumber <= 2 ? "GK" : playerNumber <= 8 ? "DEF" : playerNumber <= 16 ? "MID" : "ATT";
     const stats = getPlayerStats(preferredPosition, playerNumber, leagueReputation, clubReputation, clubName);
 
