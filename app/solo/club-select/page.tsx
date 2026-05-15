@@ -3,13 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { t } from "@/lib/i18n/translations";
 import { topLeagues } from "@/lib/game/world";
-import { useAppStore } from "@/stores/useAppStore";
 
 export default function ClubSelectPage() {
   const router = useRouter();
-  const language = useAppStore((state) => state.language);
   const [selectedClub, setSelectedClub] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -70,7 +67,7 @@ export default function ClubSelectPage() {
 
         {filteredLeagues.length === 0 && (
           <p className="mt-4 text-center text-sm text-slate-400">
-            No leagues found matching "{searchQuery}"
+            No leagues found matching &quot;{searchQuery}&quot;
           </p>
         )}
       </section>
@@ -78,7 +75,7 @@ export default function ClubSelectPage() {
       <section className="panel p-6">
         <p className="text-xs text-slate-400">
           <strong>{filteredLeagues.length}</strong> leagues available
-          {searchQuery && ` matching "${searchQuery}"`}
+          {searchQuery && ` matching &quot;${searchQuery}&quot;`}
         </p>
       </section>
 
