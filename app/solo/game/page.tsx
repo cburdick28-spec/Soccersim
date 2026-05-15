@@ -34,7 +34,8 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
         <section className="panel p-6">
           <h2 className="text-lg font-semibold">Squad Preview</h2>
           <p className="mt-1 text-xs text-slate-400">
-            {selectedClubData.players.length} players loaded for this club.
+            {selectedClubData.players.length} players loaded • Rep {selectedClubData.reputation} • Mgr{" "}
+            {selectedClubData.managerQuality} • Budget ${selectedClubData.financeBalance.toLocaleString()}
           </p>
           <ul className="mt-4 grid gap-2 text-sm text-slate-300 sm:grid-cols-2 lg:grid-cols-3">
             {selectedClubData.players.slice(0, 18).map((player) => (

@@ -104,7 +104,9 @@ export default function ClubSelectPage() {
                 }`}
               >
                 <span className="font-medium">{club.name}</span>
-                <p className="mt-1 text-xs text-slate-400">{club.players.length} players</p>
+                <p className="mt-1 text-xs text-slate-400">
+                  {club.players.length} players • Rep {club.reputation} • Mgr {club.managerQuality}
+                </p>
               </button>
             ))}
           </div>
