@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { persistMatchAndProgress } from "@/lib/game/matchPersistence";
 import { getClubById, getPlayersByClub } from "@/lib/players";
@@ -21,7 +21,7 @@ import type { Player } from "@/types/player";
 const staminaForMinute = (player: Player, minute: number) =>
   Math.max(1, Math.min(100, Math.round(player.fitness - minute * 0.4)));
 
-export default function SoloLiveMatchPage() {
+function LiveMatchContent() {
   const params = useSearchParams();
   const leagueId = params.get("leagueId")?.trim() ?? "";
   const homeClubId = params.get("homeClubId")?.trim() ?? "";
@@ -392,5 +392,19 @@ export default function SoloLiveMatchPage() {
         </section>
       )}
     </main>
+  );
+}
+
+export default function SoloLiveMatchPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="mx-auto flex min-h-screen w-full max-w-4xl px-4 py-8 sm:px-6">
+          <section className="panel w-full p-6 text-sm text-slate-300">Loading live match...</section>
+        </main>
+      }
+    >
+      <LiveMatchContent />
+    </Suspense>
   );
 }

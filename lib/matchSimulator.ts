@@ -282,7 +282,7 @@ export function tickMatch(state: MatchState): MatchState {
   }
 
   const increment = randomInt(1, 5);
-  let minute = Math.min(state.minute + increment, 90);
+  const minute = Math.min(state.minute + increment, 90);
   let next = { ...state, minute };
 
   const homeStrength = calculateTeamStrength(

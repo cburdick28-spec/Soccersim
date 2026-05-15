@@ -33,11 +33,12 @@ async function getCurrentSeasonId(): Promise<string> {
     .limit(1)
     .maybeSingle();
 
-  if (error || !data?.id) {
+  const season = (data as { id: string } | null) ?? null;
+  if (error || !season?.id) {
     throw new Error(`Failed to fetch current season: ${error?.message ?? "No season available"}`);
   }
 
-  return data.id;
+  return season.id;
 }
 
 async function upsertStanding(params: {
@@ -53,7 +54,6 @@ async function upsertStanding(params: {
   const isWin = goalsFor > goalsAgainst;
   const isDraw = goalsFor === goalsAgainst;
   const isLoss = goalsFor < goalsAgainst;
-
   const { data: existing, error: existingError } = await supabase
     .from("standings")
     .select("id, played, won, drawn, lost, goals_for, goals_against, points")
@@ -90,7 +90,7 @@ async function upsertStanding(params: {
   if (existing) {
     const { error: updateError } = await supabase
       .from("standings")
-      .update(nextPayload)
+      .update(nextPayload as never)
       .eq("id", (existing as StandingRow).id);
     if (updateError) {
       throw new Error(`Failed to update standings: ${updateError.message}`);
@@ -98,7 +98,7 @@ async function upsertStanding(params: {
     return;
   }
 
-  const { error: insertError } = await supabase.from("standings").insert(nextPayload);
+  const { error: insertError } = await supabase.from("standings").insert(nextPayload as never);
   if (insertError) {
     throw new Error(`Failed to insert standings: ${insertError.message}`);
   }
@@ -117,7 +117,7 @@ async function updatePlayerMoraleAndForm(players: Player[], didWin: boolean, did
           morale: clamp(player.morale + moraleDelta, 1, 99),
           form: clamp(player.form + formDelta, 1, 99),
           fitness: clamp(player.fitness - 3, 1, 99),
-        })
+        } as never)
         .eq("id", player.id);
       if (error) {
         throw new Error(`Failed to update player state: ${error.message}`);
@@ -149,7 +149,7 @@ export async function persistMatchAndProgress(input: PersistMatchInput): Promise
     possession_home: state.statsHome.possession,
     commentary: state.events,
     played_at: new Date().toISOString(),
-  });
+  } as never);
 
   if (matchError) {
     throw new Error(`Failed to store match: ${matchError.message}`);

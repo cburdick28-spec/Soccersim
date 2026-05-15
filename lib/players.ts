@@ -165,7 +165,7 @@ export async function getPlayersByLeague(leagueId: string): Promise<Player[]> {
     throw new Error(`Failed to fetch league clubs: ${clubError.message}`);
   }
 
-  const clubIds = (clubs ?? []).map((club) => club.id);
+  const clubIds = ((clubs ?? []) as Array<{ id: string }>).map((club) => club.id);
   if (clubIds.length === 0) {
     return [];
   }
@@ -226,7 +226,7 @@ export async function searchPlayers(query: string, leagueId?: string): Promise<P
       throw new Error(`Failed to fetch league clubs for search: ${clubError.message}`);
     }
 
-    const clubIds = (clubs ?? []).map((club) => club.id);
+    const clubIds = ((clubs ?? []) as Array<{ id: string }>).map((club) => club.id);
     if (clubIds.length === 0) {
       return [];
     }
