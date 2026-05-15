@@ -116,6 +116,6 @@ export async function getLeagues(limit = 200): Promise<string[]> {
     throw new Error(`Failed to fetch leagues: ${error.message}`);
   }
 
-  const leagues = ((data ?? []) as Array<{ league_name: string | null }>).map((row) => row.league_name);
-  return [...new Set(leagues.filter((league): league is string => Boolean(league)))];
+  const leagues = (data ?? []) as Array<{ league_name: string }>;
+  return [...new Set(leagues.map((row) => row.league_name))];
 }
