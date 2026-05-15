@@ -73,6 +73,9 @@ export default function PlayersPage() {
 
       if (searchQuery.trim().length > 0) {
         result = await searchPlayers(searchQuery);
+        if (selectedLeague) {
+          result = result.filter((player) => player.league_name === selectedLeague);
+        }
       } else if (selectedLeague) {
         result = await getPlayersByLeague(selectedLeague);
       } else {
