@@ -37,7 +37,7 @@ export async function getPlayerById(id: number): Promise<Player | null> {
   return (data as Player | null) ?? null;
 }
 
-export async function searchPlayers(query: string): Promise<Player[]> {
+export async function searchPlayers(query: string, leagueName?: string): Promise<Player[]> {
   const supabase = getSupabaseClient();
 
   const trimmedQuery = query.trim();
@@ -47,14 +47,19 @@ export async function searchPlayers(query: string): Promise<Player[]> {
   }
 
   const likeQuery = `%${trimmedQuery}%`;
-  const { data, error } = await supabase
+  let searchQuery = supabase
     .from(TABLE_NAME)
     .select(PLAYER_SELECT)
     .or(
       `short_name.ilike.${likeQuery},long_name.ilike.${likeQuery},club_name.ilike.${likeQuery},nationality_name.ilike.${likeQuery}`,
     )
-    .order("overall", { ascending: false, nullsFirst: false })
-    .limit(100);
+    .order("overall", { ascending: false, nullsFirst: false });
+
+  if (leagueName) {
+    searchQuery = searchQuery.eq("league_name", leagueName);
+  }
+
+  const { data, error } = await searchQuery.limit(100);
 
   if (error) {
     throw new Error(`Failed to search players: ${error.message}`);

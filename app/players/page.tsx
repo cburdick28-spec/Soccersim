@@ -72,10 +72,7 @@ export default function PlayersPage() {
       let result: Player[];
 
       if (searchQuery.trim().length > 0) {
-        result = await searchPlayers(searchQuery);
-        if (selectedLeague) {
-          result = result.filter((player) => player.league_name === selectedLeague);
-        }
+        result = await searchPlayers(searchQuery, selectedLeague || undefined);
       } else if (selectedLeague) {
         result = await getPlayersByLeague(selectedLeague);
       } else {
@@ -139,7 +136,7 @@ export default function PlayersPage() {
 
           <button
             type="button"
-            onClick={() => void handleApplyFilters()}
+            onClick={handleApplyFilters}
             className="rounded-lg bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-70"
             disabled={isLoading}
           >
@@ -148,7 +145,7 @@ export default function PlayersPage() {
 
           <button
             type="button"
-            onClick={() => void handleResetFilters()}
+            onClick={handleResetFilters}
             className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
             disabled={isLoading || !hasFilters}
           >
