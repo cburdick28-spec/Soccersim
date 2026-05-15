@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { t } from "@/lib/i18n/translations";
 import { topLeagues } from "@/lib/game/world";
@@ -18,6 +19,7 @@ const cheatOptions = [
 ] as const;
 
 export default function SoloPage() {
+  const router = useRouter();
   const language = useAppStore((state) => state.language);
   const setDifficulty = useAppStore((state) => state.setDifficulty);
   const [difficulty, chooseDifficulty] = useState<Difficulty>("Normal");
@@ -94,7 +96,11 @@ export default function SoloPage() {
       </section>
 
       <div className="flex gap-3">
-        <button className="rounded-md bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950" type="button">
+        <button
+          onClick={() => router.push("/solo/club-select")}
+          className="rounded-md bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950"
+          type="button"
+        >
           {t(language, "startCareer")}
         </button>
         <Link href="/" className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200">
