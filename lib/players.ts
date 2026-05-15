@@ -132,6 +132,9 @@ export async function getLeagues(pageSize = DEFAULT_PAGE_SIZE): Promise<string[]
 
   while (true) {
     if (pageCount >= MAX_PAGES) {
+      console.warn(
+        `Reached MAX_PAGES (${MAX_PAGES}) while loading leagues from ${TABLE_NAME}; results may be truncated.`,
+      );
       break;
     }
 
@@ -173,6 +176,9 @@ export async function getClubsByLeague(leagueName: string, pageSize = DEFAULT_PA
 
   while (true) {
     if (pageCount >= MAX_PAGES) {
+      console.warn(
+        `Reached MAX_PAGES (${MAX_PAGES}) while loading clubs for league "${leagueName}" from ${TABLE_NAME}; results may be truncated.`,
+      );
       break;
     }
 
