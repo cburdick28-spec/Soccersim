@@ -4,6 +4,8 @@ import type { Player } from "@/types/player";
 const TABLE_NAME = "fc26_players";
 const PLAYER_SELECT =
   "id, short_name, long_name, age, nationality_name, club_name, league_name, player_positions, overall, potential, pace, shooting, passing, dribbling, defending, physic, value_eur, wage_eur";
+const DEFAULT_PAGE_SIZE = 250;
+const MAX_PAGES = 40;
 
 export async function getPlayers(limit = 50): Promise<Player[]> {
   const supabase = getSupabaseClient();
@@ -122,12 +124,17 @@ export async function getTopPlayers(limit: number): Promise<Player[]> {
   return (data ?? []) as Player[];
 }
 
-export async function getLeagues(pageSize = 1000): Promise<string[]> {
+export async function getLeagues(pageSize = DEFAULT_PAGE_SIZE): Promise<string[]> {
   const supabase = getSupabaseClient();
   const leagues = new Set<string>();
   let from = 0;
+  let pageCount = 0;
 
   while (true) {
+    if (pageCount >= MAX_PAGES) {
+      break;
+    }
+
     const { data, error } = await supabase
       .from(TABLE_NAME)
       .select("league_name")
@@ -152,17 +159,23 @@ export async function getLeagues(pageSize = 1000): Promise<string[]> {
     }
 
     from += pageSize;
+    pageCount += 1;
   }
 
   return Array.from(leagues).sort((a, b) => a.localeCompare(b));
 }
 
-export async function getClubsByLeague(leagueName: string, pageSize = 1000): Promise<string[]> {
+export async function getClubsByLeague(leagueName: string, pageSize = DEFAULT_PAGE_SIZE): Promise<string[]> {
   const supabase = getSupabaseClient();
   const clubs = new Set<string>();
   let from = 0;
+  let pageCount = 0;
 
   while (true) {
+    if (pageCount >= MAX_PAGES) {
+      break;
+    }
+
     const { data, error } = await supabase
       .from(TABLE_NAME)
       .select("club_name")
@@ -188,6 +201,7 @@ export async function getClubsByLeague(leagueName: string, pageSize = 1000): Pro
     }
 
     from += pageSize;
+    pageCount += 1;
   }
 
   return Array.from(clubs).sort((a, b) => a.localeCompare(b));
