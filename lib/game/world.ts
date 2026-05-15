@@ -118,125 +118,20 @@ const clubCountByLeague: Record<string, number> = {
   "Indian Super League": 12,
 };
 
-const countryNameRoots: Record<string, string[]> = {
-  England: ["London", "Manchester", "Liverpool", "Birmingham", "Leeds", "Newcastle", "Bristol", "Sheffield"],
-  Spain: ["Madrid", "Barcelona", "Sevilla", "Valencia", "Bilbao", "Vigo", "Zaragoza", "Malaga"],
-  Italy: ["Milan", "Rome", "Naples", "Turin", "Bologna", "Florence", "Genoa", "Parma"],
-  Germany: ["Berlin", "Munich", "Dortmund", "Leipzig", "Hamburg", "Frankfurt", "Stuttgart", "Bremen"],
-  France: ["Paris", "Marseille", "Lyon", "Lille", "Nice", "Nantes", "Bordeaux", "Toulouse"],
-  Netherlands: ["Amsterdam", "Rotterdam", "Eindhoven", "Utrecht", "Alkmaar", "Groningen", "Arnhem", "Twente"],
-  Portugal: ["Lisbon", "Porto", "Braga", "Coimbra", "Faro", "Setubal", "Aveiro", "Leiria"],
-  Belgium: ["Brussels", "Antwerp", "Bruges", "Ghent", "Liege", "Genk", "Mechelen", "Leuven"],
-  Turkey: ["Istanbul", "Ankara", "Izmir", "Bursa", "Adana", "Konya", "Trabzon", "Antalya"],
-  Brazil: ["Sao Paulo", "Rio", "Santos", "Curitiba", "Salvador", "Recife", "Fortaleza", "Porto Alegre"],
-  Argentina: ["Buenos Aires", "Rosario", "Cordoba", "La Plata", "Mendoza", "Tucuman", "Santa Fe", "Mar del Plata"],
-  "United States": ["New York", "Los Angeles", "Chicago", "Seattle", "Austin", "Atlanta", "Miami", "Portland"],
-  Mexico: ["Mexico City", "Monterrey", "Guadalajara", "Puebla", "Tijuana", "Toluca", "Leon", "Queretaro"],
-  Scotland: ["Glasgow", "Edinburgh", "Aberdeen", "Dundee", "Perth", "Inverness", "Kilmarnock", "Paisley"],
-  "Saudi Arabia": ["Riyadh", "Jeddah", "Dammam", "Mecca", "Medina", "Taif", "Abha", "Tabuk"],
-  Japan: ["Tokyo", "Osaka", "Yokohama", "Nagoya", "Sapporo", "Kobe", "Sendai", "Fukuoka"],
-  "South Korea": ["Seoul", "Busan", "Incheon", "Daegu", "Daejeon", "Suwon", "Ulsan", "Jeonju"],
-  Australia: ["Sydney", "Melbourne", "Brisbane", "Perth", "Adelaide", "Canberra", "Hobart", "Newcastle"],
-};
-
-const clubSuffixes = [
-  "FC",
-  "United",
-  "City",
-  "Athletic",
-  "Sporting",
-  "SC",
-  "Rovers",
-  "Town",
-  "Real",
-  "AC",
-] as const;
-
-const firstNames = [
-  "Liam",
-  "Noah",
-  "Oliver",
-  "Ethan",
-  "Lucas",
-  "Mateo",
-  "Leo",
-  "Kai",
-  "Hugo",
-  "Mason",
-  "Julian",
-  "Theo",
-  "Nico",
-  "Rafael",
-  "Adrian",
-  "Santiago",
-  "Marco",
-  "Felix",
-  "Ivan",
-  "Dario",
-] as const;
-
-const lastNames = [
-  "Silva",
-  "Garcia",
-  "Martinez",
-  "Santos",
-  "Rossi",
-  "Muller",
-  "Kovac",
-  "Hernandez",
-  "Khan",
-  "Yilmaz",
-  "Nakamura",
-  "Kim",
-  "Lopez",
-  "Souza",
-  "Pereira",
-  "Novak",
-  "Jensen",
-  "Andersson",
-  "Ibrahim",
-  "Diallo",
-] as const;
-
-const positions = [
-  "GK",
-  "RB",
-  "CB",
-  "CB",
-  "LB",
-  "DM",
-  "CM",
-  "CM",
-  "AM",
-  "RW",
-  "LW",
-  "ST",
-  "ST",
-] as const;
-
 export const getLeagueKey = (league: Pick<LeagueSeed, "name" | "country">) =>
   `${league.name} • ${league.country}`;
 
-const hashText = (value: string) =>
-  Array.from(value).reduce((total, char) => total + char.charCodeAt(0), 0);
-
-const getClubName = (league: LeagueSeed, index: number) => {
-  const roots = countryNameRoots[league.country] ?? [league.country];
-  const root = roots[index % roots.length];
-  const suffix = clubSuffixes[index % clubSuffixes.length];
-  return `${root} ${suffix}`;
-};
+const getClubName = (league: LeagueSeed, index: number) => `${league.name} Club ${index + 1}`;
 
 const buildPlayers = (clubName: string, country: string): PlayerSeed[] => {
-  const base = hashText(`${clubName}-${country}`);
   return Array.from({ length: 25 }, (_, index) => {
-    const first = firstNames[(base + index * 3) % firstNames.length];
-    const last = lastNames[(base + index * 5) % lastNames.length];
-    const preferredPosition = positions[index % positions.length];
+    const playerNumber = index + 1;
+    const preferredPosition =
+      playerNumber <= 2 ? "GK" : playerNumber <= 8 ? "DEF" : playerNumber <= 16 ? "MID" : "ATT";
 
     return {
-      name: `${first} ${last}`,
-      age: 17 + ((base + index * 7) % 18),
+      name: `${clubName} Player ${playerNumber}`,
+      age: 18 + ((playerNumber * 3 + clubName.length) % 17),
       nationality: country,
       preferredPosition,
     };
