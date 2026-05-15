@@ -3,15 +3,15 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { getClubsByLeague, getLeagues } from "@/lib/players";
+import { getClubsByLeague, getLeagues, type Club, type League } from "@/lib/players";
 
 export default function ClubSelectPage() {
   const router = useRouter();
-  const [allLeagues, setAllLeagues] = useState<string[]>([]);
-  const [selectedLeagueKey, setSelectedLeagueKey] = useState<string | null>(null);
-  const [selectedClub, setSelectedClub] = useState<string | null>(null);
+  const [allLeagues, setAllLeagues] = useState<League[]>([]);
+  const [selectedLeagueId, setSelectedLeagueId] = useState<string | null>(null);
+  const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [clubsInSelectedLeague, setClubsInSelectedLeague] = useState<string[]>([]);
+  const [clubsInSelectedLeague, setClubsInSelectedLeague] = useState<Club[]>([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -40,7 +40,7 @@ export default function ClubSelectPage() {
 
   const filteredLeagues = useMemo(
     () =>
-      allLeagues.filter((league) => league.toLowerCase().includes(searchQuery.toLowerCase())),
+      allLeagues.filter((league) => league.name.toLowerCase().includes(searchQuery.toLowerCase())),
     [allLeagues, searchQuery]
   );
 
@@ -48,13 +48,13 @@ export default function ClubSelectPage() {
     let isMounted = true;
 
     async function loadLeagueClubs() {
-      if (!selectedLeagueKey) {
+      if (!selectedLeagueId) {
         setClubsInSelectedLeague([]);
         return;
       }
 
       try {
-        const clubs = await getClubsByLeague(selectedLeagueKey);
+        const clubs = await getClubsByLeague(selectedLeagueId);
         if (!isMounted) {
           return;
         }
@@ -72,12 +72,12 @@ export default function ClubSelectPage() {
     return () => {
       isMounted = false;
     };
-  }, [selectedLeagueKey]);
+  }, [selectedLeagueId]);
 
   const handleStartCareer = () => {
-    if (selectedClub && selectedLeagueKey) {
+    if (selectedClubId && selectedLeagueId) {
       router.push(
-        `/solo/game?league=${encodeURIComponent(selectedLeagueKey)}&club=${encodeURIComponent(selectedClub)}`,
+        `/solo/game?leagueId=${encodeURIComponent(selectedLeagueId)}&clubId=${encodeURIComponent(selectedClubId)}`,
       );
     }
   };
@@ -106,18 +106,18 @@ export default function ClubSelectPage() {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {filteredLeagues.map((league) => (
             <button
-              key={league}
+              key={league.id}
               onClick={() => {
-                setSelectedLeagueKey(league);
-                setSelectedClub(null);
+                setSelectedLeagueId(league.id);
+                setSelectedClubId(null);
               }}
               className={`rounded-lg border px-4 py-3 text-left transition ${
-                selectedLeagueKey === league
+                selectedLeagueId === league.id
                   ? "border-sky-400 bg-sky-500/15 text-sky-200"
                   : "border-slate-700 text-slate-200 hover:border-slate-600"
               }`}
             >
-              <span className="font-medium">{league}</span>
+              <span className="font-medium">{league.name}</span>
             </button>
           ))}
         </div>
@@ -129,21 +129,23 @@ export default function ClubSelectPage() {
         )}
       </section>
 
-      {selectedLeagueKey && (
+      {selectedLeagueId && (
         <section className="panel p-6">
-          <h2 className="text-lg font-semibold">Clubs in {selectedLeagueKey}</h2>
+          <h2 className="text-lg font-semibold">
+            Clubs in {allLeagues.find((league) => league.id === selectedLeagueId)?.name ?? "Selected league"}
+          </h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {clubsInSelectedLeague.map((club) => (
               <button
-                key={club}
-                onClick={() => setSelectedClub(club)}
+                key={club.id}
+                onClick={() => setSelectedClubId(club.id)}
                 className={`rounded-lg border px-4 py-3 text-left transition ${
-                  selectedClub === club
+                  selectedClubId === club.id
                     ? "border-sky-400 bg-sky-500/15 text-sky-200"
                     : "border-slate-700 text-slate-200 hover:border-slate-600"
                 }`}
               >
-                <span className="font-medium">{club}</span>
+                <span className="font-medium">{club.name}</span>
               </button>
             ))}
           </div>
@@ -154,10 +156,11 @@ export default function ClubSelectPage() {
         <p className="text-xs text-slate-400">
           <strong>{filteredLeagues.length}</strong> leagues available
           {searchQuery && ` matching &quot;${searchQuery}&quot;`}
-          {selectedLeagueKey && (
+          {selectedLeagueId && (
             <>
               {" "}
-              • <strong>{clubsInSelectedLeague.length}</strong> clubs in {selectedLeagueKey}
+              • <strong>{clubsInSelectedLeague.length}</strong> clubs in{" "}
+              {allLeagues.find((league) => league.id === selectedLeagueId)?.name ?? "selected league"}
             </>
           )}
         </p>
@@ -166,11 +169,12 @@ export default function ClubSelectPage() {
       <div className="flex gap-3">
         <button
           onClick={handleStartCareer}
-          disabled={!selectedClub || !selectedLeagueKey}
+          disabled={!selectedClubId || !selectedLeagueId}
           className="rounded-md bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50 disabled:cursor-not-allowed"
           type="button"
         >
-          Start Career as {selectedClub ?? "..."}
+          Start Career as{" "}
+          {clubsInSelectedLeague.find((club) => club.id === selectedClubId)?.name ?? "..."}
         </button>
         <Link href="/solo" className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200">
           Back

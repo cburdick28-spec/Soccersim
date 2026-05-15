@@ -3,26 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { getLeagues, getPlayers, getPlayersByLeague, searchPlayers } from "@/lib/players";
 import type { Player } from "@/types/player";
-
-function formatCurrency(value: number | null): string {
-  if (value === null) {
-    return "—";
-  }
-
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "EUR",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
+import type { League } from "@/lib/players";
 
 export default function PlayersPage() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedLeague, setSelectedLeague] = useState("");
+  const [selectedLeague, setSelectedLeague] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [leagues, setLeagues] = useState<string[]>([]);
+  const [leagues, setLeagues] = useState<League[]>([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -106,7 +95,7 @@ export default function PlayersPage() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
       <section className="panel p-6">
-        <h1 className="text-2xl font-bold text-slate-100 sm:text-3xl">FC 26 Players</h1>
+        <h1 className="text-2xl font-bold text-slate-100 sm:text-3xl">Players</h1>
         <p className="mt-2 text-sm text-slate-300">
           Search players and filter by league directly from Supabase.
         </p>
@@ -126,12 +115,12 @@ export default function PlayersPage() {
             className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none ring-sky-300 transition focus:ring-2"
             aria-label="Filter by league"
           >
-            <option value="">All leagues</option>
-            {leagues.map((league) => (
-              <option key={league} value={league}>
-                {league}
-              </option>
-            ))}
+              <option value="">All leagues</option>
+              {leagues.map((league) => (
+                <option key={league.id} value={league.id}>
+                  {league.name}
+                </option>
+              ))}
           </select>
 
           <button
@@ -173,25 +162,25 @@ export default function PlayersPage() {
                   <th className="px-4 py-3">League</th>
                   <th className="px-4 py-3">OVR</th>
                   <th className="px-4 py-3">POT</th>
-                  <th className="px-4 py-3">Value</th>
-                  <th className="px-4 py-3">Wage</th>
+                  <th className="px-4 py-3">Morale</th>
+                  <th className="px-4 py-3">Fitness</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-900">
                 {players.map((player) => (
                   <tr key={player.id} className="hover:bg-slate-900/40">
                     <td className="px-4 py-3">
-                      <div className="font-medium text-slate-100">{player.short_name}</div>
-                      <div className="text-xs text-slate-400">{player.player_positions ?? "—"}</div>
+                      <div className="font-medium text-slate-100">{player.name}</div>
+                      <div className="text-xs text-slate-400">{player.preferred_position}</div>
                     </td>
                     <td className="px-4 py-3 text-slate-200">{player.age}</td>
-                    <td className="px-4 py-3 text-slate-200">{player.nationality_name ?? "—"}</td>
+                    <td className="px-4 py-3 text-slate-200">{player.nationality}</td>
                     <td className="px-4 py-3 text-slate-200">{player.club_name ?? "—"}</td>
                     <td className="px-4 py-3 text-slate-200">{player.league_name ?? "—"}</td>
-                    <td className="px-4 py-3 text-slate-200">{player.overall ?? "—"}</td>
-                    <td className="px-4 py-3 text-slate-200">{player.potential ?? "—"}</td>
-                    <td className="px-4 py-3 text-slate-200">{formatCurrency(player.value_eur)}</td>
-                    <td className="px-4 py-3 text-slate-200">{formatCurrency(player.wage_eur)}</td>
+                    <td className="px-4 py-3 text-slate-200">{player.overall}</td>
+                    <td className="px-4 py-3 text-slate-200">{player.potential}</td>
+                    <td className="px-4 py-3 text-slate-200">{player.morale}</td>
+                    <td className="px-4 py-3 text-slate-200">{player.fitness}</td>
                   </tr>
                 ))}
               </tbody>

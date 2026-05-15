@@ -1,49 +1,207 @@
 import { getSupabaseClient } from "@/lib/supabase";
 import type { Player } from "@/types/player";
 
-const TABLE_NAME = "fc26_players";
-const PLAYER_SELECT =
-  "id, short_name, long_name, age, nationality_name, club_name, league_name, player_positions, overall, potential, pace, shooting, passing, dribbling, defending, physic, value_eur, wage_eur";
-const DEFAULT_PAGE_SIZE = 250;
-const MAX_PAGES = 40;
+export type League = {
+  id: string;
+  name: string;
+  country: string;
+  reputation: number;
+  tier: number;
+};
+
+export type Club = {
+  id: string;
+  league_id: string;
+  name: string;
+  reputation: number;
+  finances: number;
+};
+
+type RawPlayerRow = {
+  id: string;
+  name: string;
+  age: number;
+  nationality: string;
+  preferred_position: string;
+  potential: number;
+  morale: number;
+  fitness: number;
+  form: number;
+  pace: number;
+  shooting: number;
+  passing: number;
+  dribbling: number;
+  defending: number;
+  physical: number;
+  club_id: string | null;
+  clubs: null | {
+    name: string | null;
+    league_id: string | null;
+    leagues: null | { name: string | null } | Array<{ name: string | null }>;
+  };
+};
+
+const playerSelect =
+  "id, name, age, nationality, preferred_position, potential, morale, fitness, form, pace, shooting, passing, dribbling, defending, physical, club_id, clubs(name, league_id, leagues(name))";
+
+const toPlayer = (row: RawPlayerRow): Player => {
+  const leagueValue = row.clubs?.leagues;
+  const leagueName = Array.isArray(leagueValue)
+    ? (leagueValue[0]?.name ?? null)
+    : (leagueValue?.name ?? null);
+
+  const overall = Math.round(
+    (row.pace + row.shooting + row.passing + row.dribbling + row.defending + row.physical) / 6,
+  );
+
+  return {
+    id: row.id,
+    name: row.name,
+    age: row.age,
+    nationality: row.nationality,
+    preferred_position: row.preferred_position,
+    potential: row.potential,
+    morale: row.morale,
+    fitness: row.fitness,
+    form: row.form,
+    pace: row.pace,
+    shooting: row.shooting,
+    passing: row.passing,
+    dribbling: row.dribbling,
+    defending: row.defending,
+    physical: row.physical,
+    club_id: row.club_id,
+    club_name: row.clubs?.name ?? null,
+    league_name: leagueName,
+    overall,
+  };
+};
+
+export async function getLeagues(limit = 200): Promise<League[]> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from("leagues")
+    .select("id, name, country, reputation, tier")
+    .order("tier", { ascending: true })
+    .order("reputation", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(`Failed to fetch leagues: ${error.message}`);
+  }
+
+  return (data ?? []) as League[];
+}
+
+export async function getLeagueById(leagueId: string): Promise<League | null> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from("leagues")
+    .select("id, name, country, reputation, tier")
+    .eq("id", leagueId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to fetch league: ${error.message}`);
+  }
+
+  return ((data as League | null) ?? null);
+}
+
+export async function getClubsByLeague(leagueId: string): Promise<Club[]> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from("clubs")
+    .select("id, league_id, name, reputation, finances")
+    .eq("league_id", leagueId)
+    .order("reputation", { ascending: false })
+    .order("name", { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to fetch clubs by league: ${error.message}`);
+  }
+
+  return (data ?? []) as Club[];
+}
+
+export async function getClubById(clubId: string): Promise<Club | null> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from("clubs")
+    .select("id, league_id, name, reputation, finances")
+    .eq("id", clubId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to fetch club: ${error.message}`);
+  }
+
+  return ((data as Club | null) ?? null);
+}
 
 export async function getPlayers(limit = 50): Promise<Player[]> {
   const supabase = getSupabaseClient();
-
   const { data, error } = await supabase
-    .from(TABLE_NAME)
-    .select(PLAYER_SELECT)
-    .order("overall", { ascending: false, nullsFirst: false })
+    .from("players")
+    .select(playerSelect)
+    .order("potential", { ascending: false })
     .limit(limit);
 
   if (error) {
     throw new Error(`Failed to fetch players: ${error.message}`);
   }
 
-  console.log("Supabase player:", data?.[0]);
-
-  return (data ?? []) as Player[];
+  return ((data ?? []) as RawPlayerRow[]).map(toPlayer);
 }
 
-export async function getPlayerById(id: number): Promise<Player | null> {
+export async function getPlayersByLeague(leagueId: string): Promise<Player[]> {
   const supabase = getSupabaseClient();
+  const { data: clubs, error: clubError } = await supabase
+    .from("clubs")
+    .select("id")
+    .eq("league_id", leagueId);
 
-  const { data, error } = await supabase
-    .from(TABLE_NAME)
-    .select(PLAYER_SELECT)
-    .eq("id", id)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(`Failed to fetch player by id: ${error.message}`);
+  if (clubError) {
+    throw new Error(`Failed to fetch league clubs: ${clubError.message}`);
   }
 
-  return (data as Player | null) ?? null;
+  const clubIds = (clubs ?? []).map((club) => club.id);
+  if (clubIds.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("players")
+    .select(playerSelect)
+    .in("club_id", clubIds)
+    .order("potential", { ascending: false })
+    .limit(200);
+
+  if (error) {
+    throw new Error(`Failed to fetch players by league: ${error.message}`);
+  }
+
+  return ((data ?? []) as RawPlayerRow[]).map(toPlayer);
 }
 
-export async function searchPlayers(query: string, leagueName?: string): Promise<Player[]> {
+export async function getPlayersByClub(clubId: string, limit = 100): Promise<Player[]> {
   const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from("players")
+    .select(playerSelect)
+    .eq("club_id", clubId)
+    .order("potential", { ascending: false })
+    .limit(limit);
 
+  if (error) {
+    throw new Error(`Failed to fetch players by club: ${error.message}`);
+  }
+
+  return ((data ?? []) as RawPlayerRow[]).map(toPlayer);
+}
+
+export async function searchPlayers(query: string, leagueId?: string): Promise<Player[]> {
+  const supabase = getSupabaseClient();
   const trimmedQuery = query.trim();
 
   if (!trimmedQuery) {
@@ -51,166 +209,35 @@ export async function searchPlayers(query: string, leagueName?: string): Promise
   }
 
   const likeQuery = `%${trimmedQuery}%`;
-  let searchQuery = supabase
-    .from(TABLE_NAME)
-    .select(PLAYER_SELECT)
-    .or(
-      `short_name.ilike.${likeQuery},long_name.ilike.${likeQuery},club_name.ilike.${likeQuery},nationality_name.ilike.${likeQuery}`,
-    )
-    .order("overall", { ascending: false, nullsFirst: false });
+  let playerQuery = supabase
+    .from("players")
+    .select(playerSelect)
+    .or(`name.ilike.${likeQuery},nationality.ilike.${likeQuery},preferred_position.ilike.${likeQuery}`)
+    .order("potential", { ascending: false })
+    .limit(200);
 
-  if (leagueName) {
-    searchQuery = searchQuery.eq("league_name", leagueName);
+  if (leagueId) {
+    const { data: clubs, error: clubError } = await supabase
+      .from("clubs")
+      .select("id")
+      .eq("league_id", leagueId);
+
+    if (clubError) {
+      throw new Error(`Failed to fetch league clubs for search: ${clubError.message}`);
+    }
+
+    const clubIds = (clubs ?? []).map((club) => club.id);
+    if (clubIds.length === 0) {
+      return [];
+    }
+
+    playerQuery = playerQuery.in("club_id", clubIds);
   }
 
-  const { data, error } = await searchQuery.limit(100);
-
+  const { data, error } = await playerQuery;
   if (error) {
     throw new Error(`Failed to search players: ${error.message}`);
   }
 
-  return (data ?? []) as Player[];
-}
-
-export async function getPlayersByLeague(league_name: string): Promise<Player[]> {
-  const supabase = getSupabaseClient();
-
-  const { data, error } = await supabase
-    .from(TABLE_NAME)
-    .select(PLAYER_SELECT)
-    .eq("league_name", league_name)
-    .order("overall", { ascending: false, nullsFirst: false })
-    .limit(100);
-
-  if (error) {
-    throw new Error(`Failed to fetch players by league: ${error.message}`);
-  }
-
-  return (data ?? []) as Player[];
-}
-
-export async function getPlayersByClubInLeague(leagueName: string, clubName: string): Promise<Player[]> {
-  const supabase = getSupabaseClient();
-
-  const { data, error } = await supabase
-    .from(TABLE_NAME)
-    .select(PLAYER_SELECT)
-    .eq("league_name", leagueName)
-    .eq("club_name", clubName)
-    .order("overall", { ascending: false, nullsFirst: false })
-    .limit(100);
-
-  if (error) {
-    throw new Error(`Failed to fetch players by club and league: ${error.message}`);
-  }
-
-  return (data ?? []) as Player[];
-}
-
-export async function getTopPlayers(limit: number): Promise<Player[]> {
-  const supabase = getSupabaseClient();
-
-  const { data, error } = await supabase
-    .from(TABLE_NAME)
-    .select(PLAYER_SELECT)
-    .order("overall", { ascending: false, nullsFirst: false })
-    .order("potential", { ascending: false, nullsFirst: false })
-    .limit(limit);
-
-  if (error) {
-    throw new Error(`Failed to fetch top players: ${error.message}`);
-  }
-
-  return (data ?? []) as Player[];
-}
-
-export async function getLeagues(): Promise<string[]> {
-  const supabase = getSupabaseClient();
-  const leagues = new Set<string>();
-  let from = 0;
-  let pageCount = 0;
-
-  while (true) {
-    if (pageCount >= MAX_PAGES) {
-      console.warn(
-        `Reached MAX_PAGES (${MAX_PAGES}) while loading leagues from ${TABLE_NAME}; results may be truncated.`,
-      );
-      break;
-    }
-
-    const { data, error } = await supabase
-      .from(TABLE_NAME)
-      .select("league_name")
-      .not("league_name", "is", null)
-      .order("league_name", { ascending: true, nullsFirst: false })
-      .range(from, from + DEFAULT_PAGE_SIZE - 1);
-
-    if (error) {
-      throw new Error(`Failed to fetch leagues: ${error.message}`);
-    }
-
-    const rows = (data ?? []) as Array<{ league_name: string | null }>;
-
-    for (const row of rows) {
-      const leagueName = row.league_name?.trim();
-      if (leagueName) {
-        leagues.add(leagueName);
-      }
-    }
-
-    if (rows.length < DEFAULT_PAGE_SIZE) {
-      break;
-    }
-
-    from += DEFAULT_PAGE_SIZE;
-    pageCount += 1;
-  }
-
-  return Array.from(leagues).sort((a, b) => a.localeCompare(b));
-}
-
-export async function getClubsByLeague(leagueName: string): Promise<string[]> {
-  const supabase = getSupabaseClient();
-  const clubs = new Set<string>();
-  let from = 0;
-  let pageCount = 0;
-
-  while (true) {
-    if (pageCount >= MAX_PAGES) {
-      console.warn(
-        `Reached MAX_PAGES (${MAX_PAGES}) while loading clubs for league "${leagueName}" from ${TABLE_NAME}; results may be truncated.`,
-      );
-      break;
-    }
-
-    const { data, error } = await supabase
-      .from(TABLE_NAME)
-      .select("club_name")
-      .eq("league_name", leagueName)
-      .not("club_name", "is", null)
-      .order("club_name", { ascending: true, nullsFirst: false })
-      .range(from, from + DEFAULT_PAGE_SIZE - 1);
-
-    if (error) {
-      throw new Error(`Failed to fetch clubs by league: ${error.message}`);
-    }
-
-    const rows = (data ?? []) as Array<{ club_name: string | null }>;
-
-    for (const row of rows) {
-      const clubName = row.club_name?.trim();
-      if (clubName) {
-        clubs.add(clubName);
-      }
-    }
-
-    if (rows.length < DEFAULT_PAGE_SIZE) {
-      break;
-    }
-
-    from += DEFAULT_PAGE_SIZE;
-    pageCount += 1;
-  }
-
-  return Array.from(clubs).sort((a, b) => a.localeCompare(b));
+  return ((data ?? []) as RawPlayerRow[]).map(toPlayer);
 }
