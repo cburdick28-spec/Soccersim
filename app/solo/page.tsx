@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { getLeagues } from "@/lib/players";
+import { getLeagues, type League } from "@/lib/players";
 import { t } from "@/lib/i18n/translations";
 import { useAppStore, type Difficulty } from "@/stores/useAppStore";
 
@@ -24,7 +24,7 @@ export default function SoloPage() {
   const setDifficulty = useAppStore((state) => state.setDifficulty);
   const [difficulty, chooseDifficulty] = useState<Difficulty>("Normal");
   const [enabledCheats, setEnabledCheats] = useState<Record<string, boolean>>({});
-  const [previewLeagues, setPreviewLeagues] = useState<string[]>([]);
+  const [previewLeagues, setPreviewLeagues] = useState<League[]>([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -109,8 +109,8 @@ export default function SoloPage() {
         <h2 className="text-lg font-semibold">Available Leagues</h2>
         <ul className="mt-4 grid gap-2 text-sm text-slate-300 sm:grid-cols-2 lg:grid-cols-3">
           {previewLeagues.map((league) => (
-            <li key={league} className="rounded-md border border-slate-800 px-3 py-2">
-              {league}
+            <li key={league.id} className="rounded-md border border-slate-800 px-3 py-2">
+              {league.name}
             </li>
           ))}
         </ul>

@@ -10,10 +10,11 @@ Pocket Manager Online is a browser-first football management simulation built wi
 - EN/ES instant localization
 - Difficulty presets with solo-only sandbox cheat controls
 - Multiplayer lobby creation/join UI with invite codes
-- Lightweight text match engine with xG, possession, cards, injuries, and commentary timeline
+- Live match screen with real-time minute ticks, halftime pause, tactical controls, substitutions, and event feed
+- Match persistence flow writing `matches`, updating `standings`, and applying post-match player morale/form changes
 - International offer logic tied to manager reputation
 - Retirement-to-manager conversion logic (~5%)
-- Supabase schema + seed for leagues, competitions, players ecosystem tables, jobs, saves, and realtime messaging
+- Supabase relational runtime flow using gameplay tables (`players`, `clubs`, `leagues`, `matches`, `standings`)
 - PWA install support (`manifest.webmanifest`, offline route, `next-pwa`)
 - Vercel-ready serverless architecture
 

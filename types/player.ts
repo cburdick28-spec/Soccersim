@@ -1,20 +1,21 @@
 export interface Player {
-  id: number;
-  short_name: string;
-  long_name: string;
+  id: string;
+  name: string;
   age: number;
-  nationality_name: string | null;
+  nationality: string;
+  club_id: string | null;
   club_name: string | null;
   league_name: string | null;
-  player_positions: string | null;
-  overall: number | null;
-  potential: number | null;
-  pace: number | null;
-  shooting: number | null;
-  passing: number | null;
-  dribbling: number | null;
-  defending: number | null;
-  physic: number | null;
-  value_eur: number | null;
-  wage_eur: number | null;
+  preferred_position: string;
+  potential: number;
+  morale: number;
+  fitness: number;
+  form: number;
+  pace: number;
+  shooting: number;
+  passing: number;
+  dribbling: number;
+  defending: number;
+  physical: number;
+  overall: number;
 }
