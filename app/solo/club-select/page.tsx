@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { topLeagues } from "@/lib/game/world";
+import { clubsByLeague, getLeagueKey, topLeagues } from "@/lib/game/world";
 
 export default function ClubSelectPage() {
   const router = useRouter();
+  const [selectedLeagueKey, setSelectedLeagueKey] = useState<string | null>(null);
   const [selectedClub, setSelectedClub] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -21,9 +22,21 @@ export default function ClubSelectPage() {
     [allLeagues, searchQuery]
   );
 
+  const selectedLeague = useMemo(
+    () => allLeagues.find((league) => getLeagueKey(league) === selectedLeagueKey),
+    [allLeagues, selectedLeagueKey],
+  );
+
+  const clubsInSelectedLeague = useMemo(
+    () => (selectedLeagueKey ? clubsByLeague[selectedLeagueKey] ?? [] : []),
+    [selectedLeagueKey],
+  );
+
   const handleStartCareer = () => {
-    if (selectedClub) {
-      router.push(`/solo/game?club=${encodeURIComponent(selectedClub)}`);
+    if (selectedClub && selectedLeagueKey) {
+      router.push(
+        `/solo/game?league=${encodeURIComponent(selectedLeagueKey)}&club=${encodeURIComponent(selectedClub)}`,
+      );
     }
   };
 
@@ -52,9 +65,12 @@ export default function ClubSelectPage() {
           {filteredLeagues.map((league) => (
             <button
               key={`${league.name}-${league.country}`}
-              onClick={() => setSelectedClub(`${league.name} • ${league.country}`)}
+              onClick={() => {
+                setSelectedLeagueKey(getLeagueKey(league));
+                setSelectedClub(null);
+              }}
               className={`rounded-lg border px-4 py-3 text-left transition ${
-                selectedClub === `${league.name} • ${league.country}`
+                selectedLeagueKey === getLeagueKey(league)
                   ? "border-sky-400 bg-sky-500/15 text-sky-200"
                   : "border-slate-700 text-slate-200 hover:border-slate-600"
               }`}
@@ -72,21 +88,50 @@ export default function ClubSelectPage() {
         )}
       </section>
 
+      {selectedLeague && (
+        <section className="panel p-6">
+          <h2 className="text-lg font-semibold">Clubs in {selectedLeague.name}</h2>
+          <p className="mt-1 text-xs text-slate-400">{selectedLeague.country}</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {clubsInSelectedLeague.map((club) => (
+              <button
+                key={club.name}
+                onClick={() => setSelectedClub(club.name)}
+                className={`rounded-lg border px-4 py-3 text-left transition ${
+                  selectedClub === club.name
+                    ? "border-sky-400 bg-sky-500/15 text-sky-200"
+                    : "border-slate-700 text-slate-200 hover:border-slate-600"
+                }`}
+              >
+                <span className="font-medium">{club.name}</span>
+                <p className="mt-1 text-xs text-slate-400">{club.players.length} players</p>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="panel p-6">
         <p className="text-xs text-slate-400">
           <strong>{filteredLeagues.length}</strong> leagues available
           {searchQuery && ` matching &quot;${searchQuery}&quot;`}
+          {selectedLeague && (
+            <>
+              {" "}
+              • <strong>{clubsInSelectedLeague.length}</strong> clubs in {selectedLeague.name}
+            </>
+          )}
         </p>
       </section>
 
       <div className="flex gap-3">
         <button
           onClick={handleStartCareer}
-          disabled={!selectedClub}
+          disabled={!selectedClub || !selectedLeagueKey}
           className="rounded-md bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50 disabled:cursor-not-allowed"
           type="button"
         >
-          Start Career as {selectedClub ? selectedClub.split(" •")[0] : "..."}
+          Start Career as {selectedClub ?? "..."}
         </button>
         <Link href="/solo" className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200">
           Back

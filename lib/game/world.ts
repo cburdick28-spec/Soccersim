@@ -4,6 +4,20 @@ export type LeagueSeed = {
   reputation: number;
 };
 
+export type PlayerSeed = {
+  name: string;
+  age: number;
+  nationality: string;
+  preferredPosition: string;
+};
+
+export type ClubSeed = {
+  name: string;
+  leagueName: string;
+  country: string;
+  players: PlayerSeed[];
+};
+
 const leagueNames = [
   ["Premier League", "England"],
   ["Championship", "England"],
@@ -81,3 +95,66 @@ export const topLeagues: LeagueSeed[] = leagueNames.map(([name, country], index)
 }));
 
 export const topNationalTeams = nationalTeams.slice(0, 110);
+
+const defaultClubCount = 20;
+
+const clubCountByLeague: Record<string, number> = {
+  Championship: 24,
+  "League One": 24,
+  "La Liga 2": 22,
+  "2. Bundesliga": 18,
+  "Ligue 1": 18,
+  "Ligue 2": 18,
+  Eredivisie: 18,
+  "Primeira Liga": 18,
+  "Belgian Pro League": 16,
+  "Scottish Premiership": 12,
+  "Scottish Championship": 10,
+  "Swiss Super League": 12,
+  "Austrian Bundesliga": 12,
+  "Danish Superliga": 12,
+  "Croatian League": 10,
+  "Finnish Veikkausliiga": 12,
+  "Indian Super League": 12,
+};
+
+export const getLeagueKey = (league: Pick<LeagueSeed, "name" | "country">) =>
+  `${league.name} • ${league.country}`;
+
+const getClubName = (league: LeagueSeed, index: number) => `${league.name} Club ${index + 1}`;
+
+const buildPlayers = (clubName: string, country: string): PlayerSeed[] => {
+  return Array.from({ length: 25 }, (_, index) => {
+    const playerNumber = index + 1;
+    const preferredPosition =
+      playerNumber <= 2 ? "GK" : playerNumber <= 8 ? "DEF" : playerNumber <= 16 ? "MID" : "ATT";
+
+    return {
+      name: `${clubName} Player ${playerNumber}`,
+      age: 18 + ((playerNumber * 3 + clubName.length) % 17),
+      nationality: country,
+      preferredPosition,
+    };
+  });
+};
+
+export const clubsByLeague: Record<string, ClubSeed[]> = topLeagues.reduce(
+  (accumulator, league) => {
+    const key = getLeagueKey(league);
+    const clubCount = clubCountByLeague[league.name] ?? defaultClubCount;
+
+    const clubs = Array.from({ length: clubCount }, (_, index) => {
+      const name = getClubName(league, index);
+      return {
+        name,
+        leagueName: league.name,
+        country: league.country,
+        players: buildPlayers(name, league.country),
+      };
+    });
+
+    accumulator[key] = clubs;
+    return accumulator;
+  },
+  {} as Record<string, ClubSeed[]>,
+);
