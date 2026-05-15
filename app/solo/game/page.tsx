@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getPlayersByLeague } from "@/lib/players";
+import { getPlayersByClubInLeague } from "@/lib/players";
 
 type SoloGamePageProps = {
   searchParams: Promise<{ club?: string; league?: string }>;
@@ -11,7 +11,7 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
   const selectedLeague = league?.trim();
   const selectedClubPlayers =
     selectedClub && selectedLeague
-      ? (await getPlayersByLeague(selectedLeague)).filter((player) => player.club_name === selectedClub)
+      ? await getPlayersByClubInLeague(selectedLeague, selectedClub)
       : [];
 
   return (

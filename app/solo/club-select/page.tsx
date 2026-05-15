@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { getLeagues, getPlayersByLeague } from "@/lib/players";
-import type { Player } from "@/types/player";
+import { getClubsByLeague, getLeagues } from "@/lib/players";
 
 export default function ClubSelectPage() {
   const router = useRouter();
@@ -12,7 +11,7 @@ export default function ClubSelectPage() {
   const [selectedLeagueKey, setSelectedLeagueKey] = useState<string | null>(null);
   const [selectedClub, setSelectedClub] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [leaguePlayers, setLeaguePlayers] = useState<Player[]>([]);
+  const [clubsInSelectedLeague, setClubsInSelectedLeague] = useState<string[]>([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -48,46 +47,32 @@ export default function ClubSelectPage() {
   useEffect(() => {
     let isMounted = true;
 
-    async function loadLeaguePlayers() {
+    async function loadLeagueClubs() {
       if (!selectedLeagueKey) {
-        setLeaguePlayers([]);
+        setClubsInSelectedLeague([]);
         return;
       }
 
       try {
-        const players = await getPlayersByLeague(selectedLeagueKey);
+        const clubs = await getClubsByLeague(selectedLeagueKey);
         if (!isMounted) {
           return;
         }
-        setLeaguePlayers(players);
+        setClubsInSelectedLeague(clubs);
       } catch {
         if (!isMounted) {
           return;
         }
-        setLeaguePlayers([]);
+        setClubsInSelectedLeague([]);
       }
     }
 
-    void loadLeaguePlayers();
+    void loadLeagueClubs();
 
     return () => {
       isMounted = false;
     };
   }, [selectedLeagueKey]);
-
-  const clubsInSelectedLeague = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const player of leaguePlayers) {
-      const clubName = player.club_name?.trim();
-      if (!clubName) {
-        continue;
-      }
-      counts.set(clubName, (counts.get(clubName) ?? 0) + 1);
-    }
-    return Array.from(counts.entries())
-      .map(([name, playerCount]) => ({ name, playerCount }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [leaguePlayers]);
 
   const handleStartCareer = () => {
     if (selectedClub && selectedLeagueKey) {
@@ -150,16 +135,15 @@ export default function ClubSelectPage() {
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {clubsInSelectedLeague.map((club) => (
               <button
-                key={club.name}
-                onClick={() => setSelectedClub(club.name)}
+                key={club}
+                onClick={() => setSelectedClub(club)}
                 className={`rounded-lg border px-4 py-3 text-left transition ${
-                  selectedClub === club.name
+                  selectedClub === club
                     ? "border-sky-400 bg-sky-500/15 text-sky-200"
                     : "border-slate-700 text-slate-200 hover:border-slate-600"
                 }`}
               >
-                <span className="font-medium">{club.name}</span>
-                <p className="mt-1 text-xs text-slate-400">{club.playerCount} players</p>
+                <span className="font-medium">{club}</span>
               </button>
             ))}
           </div>

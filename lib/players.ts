@@ -87,6 +87,24 @@ export async function getPlayersByLeague(league_name: string): Promise<Player[]>
   return (data ?? []) as Player[];
 }
 
+export async function getPlayersByClubInLeague(leagueName: string, clubName: string): Promise<Player[]> {
+  const supabase = getSupabaseClient();
+
+  const { data, error } = await supabase
+    .from(TABLE_NAME)
+    .select(PLAYER_SELECT)
+    .eq("league_name", leagueName)
+    .eq("club_name", clubName)
+    .order("overall", { ascending: false, nullsFirst: false })
+    .limit(100);
+
+  if (error) {
+    throw new Error(`Failed to fetch players by club and league: ${error.message}`);
+  }
+
+  return (data ?? []) as Player[];
+}
+
 export async function getTopPlayers(limit: number): Promise<Player[]> {
   const supabase = getSupabaseClient();
 
@@ -104,20 +122,73 @@ export async function getTopPlayers(limit: number): Promise<Player[]> {
   return (data ?? []) as Player[];
 }
 
-export async function getLeagues(limit = 200): Promise<string[]> {
+export async function getLeagues(pageSize = 1000): Promise<string[]> {
   const supabase = getSupabaseClient();
+  const leagues = new Set<string>();
+  let from = 0;
 
-  const { data, error } = await supabase
-    .from(TABLE_NAME)
-    .select("league_name")
-    .not("league_name", "is", null)
-    .order("league_name", { ascending: true })
-    .limit(limit);
+  while (true) {
+    const { data, error } = await supabase
+      .from(TABLE_NAME)
+      .select("league_name")
+      .not("league_name", "is", null)
+      .range(from, from + pageSize - 1);
 
-  if (error) {
-    throw new Error(`Failed to fetch leagues: ${error.message}`);
+    if (error) {
+      throw new Error(`Failed to fetch leagues: ${error.message}`);
+    }
+
+    const rows = (data ?? []) as Array<{ league_name: string | null }>;
+
+    for (const row of rows) {
+      const leagueName = row.league_name?.trim();
+      if (leagueName) {
+        leagues.add(leagueName);
+      }
+    }
+
+    if (rows.length < pageSize) {
+      break;
+    }
+
+    from += pageSize;
   }
 
-  const leagues = (data ?? []) as Array<{ league_name: string }>;
-  return [...new Set(leagues.map((row) => row.league_name))];
+  return Array.from(leagues).sort((a, b) => a.localeCompare(b));
+}
+
+export async function getClubsByLeague(leagueName: string, pageSize = 1000): Promise<string[]> {
+  const supabase = getSupabaseClient();
+  const clubs = new Set<string>();
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from(TABLE_NAME)
+      .select("club_name")
+      .eq("league_name", leagueName)
+      .not("club_name", "is", null)
+      .range(from, from + pageSize - 1);
+
+    if (error) {
+      throw new Error(`Failed to fetch clubs by league: ${error.message}`);
+    }
+
+    const rows = (data ?? []) as Array<{ club_name: string | null }>;
+
+    for (const row of rows) {
+      const clubName = row.club_name?.trim();
+      if (clubName) {
+        clubs.add(clubName);
+      }
+    }
+
+    if (rows.length < pageSize) {
+      break;
+    }
+
+    from += pageSize;
+  }
+
+  return Array.from(clubs).sort((a, b) => a.localeCompare(b));
 }
