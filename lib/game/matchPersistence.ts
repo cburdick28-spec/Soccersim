@@ -1,25 +1,17 @@
 import { getSupabaseClient } from "@/lib/supabase";
+import { advanceMatchday, updateLeagueStandings } from "@/lib/game/seasonEngine";
 import type { MatchState } from "@/lib/matchSimulator";
 import type { Player } from "@/types/player";
 
 type PersistMatchInput = {
+  fixtureId: string;
   leagueId: string;
+  userClubId: string;
   homeClubId: string;
   awayClubId: string;
   state: MatchState;
   homePlayers: Player[];
   awayPlayers: Player[];
-};
-
-type StandingRow = {
-  id: string;
-  played: number;
-  won: number;
-  drawn: number;
-  lost: number;
-  goals_for: number;
-  goals_against: number;
-  points: number;
 };
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -39,69 +31,6 @@ async function getCurrentSeasonId(): Promise<string> {
   }
 
   return season.id;
-}
-
-async function upsertStanding(params: {
-  leagueId: string;
-  seasonId: string;
-  clubId: string;
-  goalsFor: number;
-  goalsAgainst: number;
-}): Promise<void> {
-  const supabase = getSupabaseClient();
-  const { leagueId, seasonId, clubId, goalsFor, goalsAgainst } = params;
-
-  const isWin = goalsFor > goalsAgainst;
-  const isDraw = goalsFor === goalsAgainst;
-  const isLoss = goalsFor < goalsAgainst;
-  const { data: existing, error: existingError } = await supabase
-    .from("standings")
-    .select("id, played, won, drawn, lost, goals_for, goals_against, points")
-    .eq("league_id", leagueId)
-    .eq("season_id", seasonId)
-    .eq("club_id", clubId)
-    .maybeSingle();
-
-  if (existingError) {
-    throw new Error(`Failed to read standings: ${existingError.message}`);
-  }
-
-  const nextPayload = {
-    league_id: leagueId,
-    season_id: seasonId,
-    club_id: clubId,
-    played: (existing as StandingRow | null)?.played ?? 0,
-    won: (existing as StandingRow | null)?.won ?? 0,
-    drawn: (existing as StandingRow | null)?.drawn ?? 0,
-    lost: (existing as StandingRow | null)?.lost ?? 0,
-    goals_for: (existing as StandingRow | null)?.goals_for ?? 0,
-    goals_against: (existing as StandingRow | null)?.goals_against ?? 0,
-    points: (existing as StandingRow | null)?.points ?? 0,
-  };
-
-  nextPayload.played += 1;
-  nextPayload.won += isWin ? 1 : 0;
-  nextPayload.drawn += isDraw ? 1 : 0;
-  nextPayload.lost += isLoss ? 1 : 0;
-  nextPayload.goals_for += goalsFor;
-  nextPayload.goals_against += goalsAgainst;
-  nextPayload.points += isWin ? 3 : isDraw ? 1 : 0;
-
-  if (existing) {
-    const { error: updateError } = await supabase
-      .from("standings")
-      .update(nextPayload as never)
-      .eq("id", (existing as StandingRow).id);
-    if (updateError) {
-      throw new Error(`Failed to update standings: ${updateError.message}`);
-    }
-    return;
-  }
-
-  const { error: insertError } = await supabase.from("standings").insert(nextPayload as never);
-  if (insertError) {
-    throw new Error(`Failed to insert standings: ${insertError.message}`);
-  }
 }
 
 async function updatePlayerMoraleAndForm(players: Player[], didWin: boolean, didDraw: boolean): Promise<void> {
@@ -130,7 +59,9 @@ export async function persistMatchAndProgress(input: PersistMatchInput): Promise
   const supabase = getSupabaseClient();
   const seasonId = await getCurrentSeasonId();
   const {
+    fixtureId,
     leagueId,
+    userClubId,
     homeClubId,
     awayClubId,
     state,
@@ -138,39 +69,75 @@ export async function persistMatchAndProgress(input: PersistMatchInput): Promise
     awayPlayers,
   } = input;
 
-  const { error: matchError } = await supabase.from("matches").insert({
-    season_id: seasonId,
-    home_club_id: homeClubId,
-    away_club_id: awayClubId,
-    home_goals: state.homeScore,
-    away_goals: state.awayScore,
-    xg_home: Number(state.statsHome.xGEstimate.toFixed(2)),
-    xg_away: Number(state.statsAway.xGEstimate.toFixed(2)),
-    possession_home: state.statsHome.possession,
-    commentary: state.events,
-    played_at: new Date().toISOString(),
-  } as never);
+  const { data: fixture, error: fixtureError } = await supabase
+    .from("matches")
+    .select("id, season_id, league_id, home_club_id, away_club_id, status, matchday")
+    .eq("id", fixtureId)
+    .maybeSingle();
+
+  if (fixtureError) {
+    throw new Error(`Failed to load fixture: ${fixtureError.message}`);
+  }
+  const fixtureRow = (fixture as {
+    id: string;
+    season_id: string;
+    league_id: string;
+    home_club_id: string;
+    away_club_id: string;
+    status: "scheduled" | "in_progress" | "completed";
+    matchday: number;
+  } | null);
+  if (!fixtureRow) {
+    throw new Error("Fixture not found.");
+  }
+  if (fixtureRow.season_id !== seasonId) {
+    throw new Error("Fixture does not belong to the active season.");
+  }
+  if (fixtureRow.league_id !== leagueId) {
+    throw new Error("Fixture does not belong to the selected league.");
+  }
+  if (fixtureRow.home_club_id !== homeClubId || fixtureRow.away_club_id !== awayClubId) {
+    throw new Error("Fixture clubs do not match submitted match clubs.");
+  }
+  if (![homeClubId, awayClubId].includes(userClubId)) {
+    throw new Error("User club is not part of this fixture.");
+  }
+  if (fixtureRow.status === "completed") {
+    return;
+  }
+
+  const { data: clubs, error: clubsError } = await supabase
+    .from("clubs")
+    .select("id, league_id")
+    .in("id", [homeClubId, awayClubId]);
+  if (clubsError) {
+    throw new Error(`Failed to validate clubs for fixture: ${clubsError.message}`);
+  }
+  const clubRows = (clubs ?? []) as Array<{ id: string; league_id: string }>;
+  if (clubRows.length !== 2 || clubRows.some((club) => club.league_id !== leagueId)) {
+    throw new Error("Fixture clubs are not in the same league.");
+  }
+
+  const { error: matchError } = await supabase
+    .from("matches")
+    .update({
+      home_goals: state.homeScore,
+      away_goals: state.awayScore,
+      xg_home: Number(state.statsHome.xGEstimate.toFixed(2)),
+      xg_away: Number(state.statsAway.xGEstimate.toFixed(2)),
+      possession_home: state.statsHome.possession,
+      commentary: state.events,
+      status: "completed",
+      played_at: new Date().toISOString(),
+    } as never)
+    .eq("id", fixtureId)
+    .eq("status", "scheduled");
 
   if (matchError) {
     throw new Error(`Failed to store match: ${matchError.message}`);
   }
 
-  await Promise.all([
-    upsertStanding({
-      leagueId,
-      seasonId,
-      clubId: homeClubId,
-      goalsFor: state.homeScore,
-      goalsAgainst: state.awayScore,
-    }),
-    upsertStanding({
-      leagueId,
-      seasonId,
-      clubId: awayClubId,
-      goalsFor: state.awayScore,
-      goalsAgainst: state.homeScore,
-    }),
-  ]);
+  await updateLeagueStandings(leagueId, seasonId);
 
   const homeWin = state.homeScore > state.awayScore;
   const awayWin = state.awayScore > state.homeScore;
@@ -180,4 +147,9 @@ export async function persistMatchAndProgress(input: PersistMatchInput): Promise
     updatePlayerMoraleAndForm(homePlayers, homeWin, draw),
     updatePlayerMoraleAndForm(awayPlayers, awayWin, draw),
   ]);
+
+  await advanceMatchday({
+    seasonId,
+    userFixtureId: fixtureId,
+  });
 }
