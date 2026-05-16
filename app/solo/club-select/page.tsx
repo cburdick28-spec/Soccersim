@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { getLeagues, type Club, type League } from "@/lib/players";
-import { getSupabaseClient } from "@/lib/supabase";
+import { getClubsByLeague, getLeagues, type Club, type League } from "@/lib/players";
 
 export default function ClubSelectPage() {
   const router = useRouter();
@@ -48,18 +47,13 @@ export default function ClubSelectPage() {
       }
 
       try {
-        const supabase = getSupabaseClient();
-        const { data: clubs } = await supabase
-          .from("clubs")
-          .select("*")
-          .eq("league_id", selectedLeagueId)
-          .order("name");
+        const clubs = await getClubsByLeague(selectedLeagueId);
         console.log("selectedLeagueId", selectedLeagueId);
         console.log("clubs result", clubs);
         if (!isMounted) {
           return;
         }
-        setClubsInSelectedLeague((clubs ?? []) as Club[]);
+        setClubsInSelectedLeague(clubs);
       } catch {
         if (!isMounted) {
           return;
