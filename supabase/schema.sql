@@ -78,15 +78,19 @@ create table if not exists seasons (
   id uuid primary key default gen_random_uuid(),
   label text not null unique,
   current_matchday integer not null default 1,
+  status text not null default 'active' check (status in ('active', 'completed')),
   started_at timestamptz not null default now()
 );
 
 create table if not exists matches (
   id uuid primary key default gen_random_uuid(),
   season_id uuid not null references seasons(id) on delete cascade,
+  league_id uuid not null references leagues(id) on delete cascade,
   competition_id uuid references competitions(id) on delete set null,
   home_club_id uuid not null references clubs(id) on delete cascade,
   away_club_id uuid not null references clubs(id) on delete cascade,
+  matchday integer not null default 1,
+  status text not null default 'scheduled' check (status in ('scheduled', 'in_progress', 'completed')),
   home_goals integer,
   away_goals integer,
   xg_home numeric,
@@ -96,6 +100,7 @@ create table if not exists matches (
   played_at timestamptz
 );
 create index if not exists matches_season_idx on matches(season_id);
+create index if not exists matches_league_season_matchday_idx on matches(league_id, season_id, matchday);
 
 create table if not exists standings (
   id uuid primary key default gen_random_uuid(),
@@ -108,9 +113,65 @@ create table if not exists standings (
   lost integer not null default 0,
   goals_for integer not null default 0,
   goals_against integer not null default 0,
+  goal_difference integer not null default 0,
   points integer not null default 0,
   unique (league_id, season_id, club_id)
 );
+
+alter table seasons
+  add column if not exists status text not null default 'active';
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'seasons_status_check'
+  ) then
+    alter table seasons
+      add constraint seasons_status_check check (status in ('active', 'completed'));
+  end if;
+end $$;
+
+alter table matches
+  add column if not exists league_id uuid references leagues(id) on delete cascade,
+  add column if not exists matchday integer not null default 1,
+  add column if not exists status text not null default 'scheduled';
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'matches_status_check'
+  ) then
+    alter table matches
+      add constraint matches_status_check check (status in ('scheduled', 'in_progress', 'completed'));
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'matches_home_away_diff_check'
+  ) then
+    alter table matches
+      add constraint matches_home_away_diff_check check (home_club_id <> away_club_id);
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'matches_unique_fixture'
+  ) then
+    alter table matches
+      add constraint matches_unique_fixture unique (home_club_id, away_club_id, season_id, matchday);
+  end if;
+end $$;
+
+alter table standings
+  add column if not exists goal_difference integer not null default 0;
 
 create table if not exists transfers (
   id uuid primary key default gen_random_uuid(),

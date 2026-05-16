@@ -24,8 +24,11 @@ const staminaForMinute = (player: Player, minute: number) =>
 function LiveMatchContent() {
   const params = useSearchParams();
   const leagueId = params.get("leagueId")?.trim() ?? "";
+  const fixtureId = params.get("fixtureId")?.trim() ?? "";
+  const userClubId = params.get("userClubId")?.trim() ?? "";
   const homeClubId = params.get("homeClubId")?.trim() ?? "";
   const awayClubId = params.get("awayClubId")?.trim() ?? "";
+  const userIsHome = userClubId === homeClubId;
 
   const [homeClubName, setHomeClubName] = useState("Home");
   const [awayClubName, setAwayClubName] = useState("Away");
@@ -79,7 +82,7 @@ function LiveMatchContent() {
   }, [state?.isLive, state?.isPaused, state?.phase]);
 
   useEffect(() => {
-    if (!state || state.phase !== "full_time" || !leagueId || saveStarted.current) {
+    if (!state || state.phase !== "full_time" || !leagueId || !fixtureId || !userClubId || saveStarted.current) {
       return;
     }
 
@@ -88,7 +91,9 @@ function LiveMatchContent() {
     setSaveError(null);
 
     void persistMatchAndProgress({
+      fixtureId,
       leagueId,
+      userClubId,
       homeClubId,
       awayClubId,
       state,
@@ -102,11 +107,11 @@ function LiveMatchContent() {
         setSaveError(error instanceof Error ? error.message : "Failed to save match.");
       })
       .finally(() => setIsSaving(false));
-  }, [state, leagueId, homeClubId, awayClubId]);
+  }, [state, fixtureId, leagueId, userClubId, homeClubId, awayClubId]);
 
   const output = useMemo(() => (state ? buildMatchOutput(state) : null), [state]);
 
-  if (!homeClubId || !awayClubId || !leagueId) {
+  if (!homeClubId || !awayClubId || !leagueId || !fixtureId || !userClubId) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-4 px-4 py-8 sm:px-6">
         <section className="panel p-6 text-sm text-amber-300">
@@ -141,10 +146,10 @@ function LiveMatchContent() {
             <p className="text-xl font-bold">
               {homeClubName} {state.homeScore} - {state.awayScore} {awayClubName}
             </p>
-            <p className="text-xs text-slate-400">Momentum: {(state.momentum * 100).toFixed(0)}%</p>
+              <p className="text-xs text-slate-400">Momentum: {(state.momentum * 100).toFixed(0)}%</p>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
       <section className="grid gap-5 lg:grid-cols-[2fr_1fr]">
         <div className="space-y-5">
@@ -239,12 +244,14 @@ function LiveMatchContent() {
               <label className="block">
                 <span className="text-xs text-slate-400">Formation</span>
                 <select
-                  value={state.tacticsHome.formation}
-                  onChange={(event) =>
-                    setState((current) =>
-                      current ? updateTactics(current, "home", { formation: event.target.value }) : current,
-                    )
-                  }
+                   value={userIsHome ? state.tacticsHome.formation : state.tacticsAway.formation}
+                   onChange={(event) =>
+                     setState((current) =>
+                       current
+                         ? updateTactics(current, userIsHome ? "home" : "away", { formation: event.target.value })
+                         : current,
+                     )
+                   }
                   className="mt-1 w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-2"
                 >
                   <option>4-3-3</option>
@@ -254,48 +261,60 @@ function LiveMatchContent() {
                 </select>
               </label>
               <label className="block">
-                <span className="text-xs text-slate-400">Balance ({state.tacticsHome.balance})</span>
-                <input
-                  type="range"
-                  min={-2}
-                  max={2}
-                  step={1}
-                  value={state.tacticsHome.balance}
-                  onChange={(event) =>
-                    setState((current) =>
-                      current ? updateTactics(current, "home", { balance: Number(event.target.value) }) : current,
-                    )
-                  }
+                 <span className="text-xs text-slate-400">
+                   Balance ({userIsHome ? state.tacticsHome.balance : state.tacticsAway.balance})
+                 </span>
+                 <input
+                   type="range"
+                   min={-2}
+                   max={2}
+                   step={1}
+                   value={userIsHome ? state.tacticsHome.balance : state.tacticsAway.balance}
+                   onChange={(event) =>
+                     setState((current) =>
+                       current
+                         ? updateTactics(current, userIsHome ? "home" : "away", { balance: Number(event.target.value) })
+                         : current,
+                     )
+                   }
                   className="mt-1 w-full"
                 />
               </label>
               <label className="block">
-                <span className="text-xs text-slate-400">Pressing ({state.tacticsHome.pressing})</span>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={state.tacticsHome.pressing}
-                  onChange={(event) =>
-                    setState((current) =>
-                      current ? updateTactics(current, "home", { pressing: Number(event.target.value) }) : current,
-                    )
-                  }
+                 <span className="text-xs text-slate-400">
+                   Pressing ({userIsHome ? state.tacticsHome.pressing : state.tacticsAway.pressing})
+                 </span>
+                 <input
+                   type="range"
+                   min={0}
+                   max={100}
+                   value={userIsHome ? state.tacticsHome.pressing : state.tacticsAway.pressing}
+                   onChange={(event) =>
+                     setState((current) =>
+                       current
+                         ? updateTactics(current, userIsHome ? "home" : "away", { pressing: Number(event.target.value) })
+                         : current,
+                     )
+                   }
                   className="mt-1 w-full"
                 />
               </label>
               <label className="block">
-                <span className="text-xs text-slate-400">Tempo ({state.tacticsHome.tempo})</span>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={state.tacticsHome.tempo}
-                  onChange={(event) =>
-                    setState((current) =>
-                      current ? updateTactics(current, "home", { tempo: Number(event.target.value) }) : current,
-                    )
-                  }
+                 <span className="text-xs text-slate-400">
+                   Tempo ({userIsHome ? state.tacticsHome.tempo : state.tacticsAway.tempo})
+                 </span>
+                 <input
+                   type="range"
+                   min={0}
+                   max={100}
+                   value={userIsHome ? state.tacticsHome.tempo : state.tacticsAway.tempo}
+                   onChange={(event) =>
+                     setState((current) =>
+                       current
+                         ? updateTactics(current, userIsHome ? "home" : "away", { tempo: Number(event.target.value) })
+                         : current,
+                     )
+                   }
                   className="mt-1 w-full"
                 />
               </label>
@@ -303,7 +322,9 @@ function LiveMatchContent() {
           </section>
 
           <section className="panel p-5">
-            <h2 className="text-lg font-semibold">Substitutions ({state.subsUsedHome}/5)</h2>
+            <h2 className="text-lg font-semibold">
+              Substitutions ({userIsHome ? state.subsUsedHome : state.subsUsedAway}/5)
+            </h2>
             <div className="mt-3 grid gap-2 text-sm">
               <select
                 value={selectedOut}
@@ -311,7 +332,7 @@ function LiveMatchContent() {
                 className="rounded-md border border-slate-700 bg-slate-900 px-2 py-2"
               >
                 <option value="">Select player out</option>
-                {state.playersOnFieldHome.map((player) => (
+                {(userIsHome ? state.playersOnFieldHome : state.playersOnFieldAway).map((player) => (
                   <option key={player.id} value={player.id}>
                     {player.name}
                   </option>
@@ -323,7 +344,7 @@ function LiveMatchContent() {
                 className="rounded-md border border-slate-700 bg-slate-900 px-2 py-2"
               >
                 <option value="">Select player in</option>
-                {state.benchHome.map((player) => (
+                {(userIsHome ? state.benchHome : state.benchAway).map((player) => (
                   <option key={player.id} value={player.id}>
                     {player.name}
                   </option>
@@ -331,15 +352,15 @@ function LiveMatchContent() {
               </select>
               <button
                 type="button"
-                disabled={!selectedOut || !selectedIn || state.subsUsedHome >= 5}
-                onClick={() =>
-                  setState((current) => {
-                    if (!current || !selectedOut || !selectedIn) {
-                      return current;
-                    }
-                    return makeSubstitution(current, "home", selectedOut, selectedIn);
-                  })
-                }
+                 disabled={!selectedOut || !selectedIn || (userIsHome ? state.subsUsedHome : state.subsUsedAway) >= 5}
+                 onClick={() =>
+                   setState((current) => {
+                     if (!current || !selectedOut || !selectedIn) {
+                       return current;
+                     }
+                     return makeSubstitution(current, userIsHome ? "home" : "away", selectedOut, selectedIn);
+                   })
+                 }
                 className="rounded-md bg-sky-500 px-3 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Make Substitution
@@ -350,7 +371,7 @@ function LiveMatchContent() {
           <section className="panel p-5">
             <h2 className="text-lg font-semibold">Stamina</h2>
             <ul className="mt-3 space-y-2 text-xs">
-              {state.playersOnFieldHome.map((player) => {
+               {(userIsHome ? state.playersOnFieldHome : state.playersOnFieldAway).map((player) => {
                 const stamina = staminaForMinute(player, state.minute);
                 return (
                   <li key={player.id}>
@@ -382,10 +403,10 @@ function LiveMatchContent() {
             Save status: {isSaving ? "Saving..." : saved ? "Saved to Supabase." : saveError ?? "Pending"}
           </p>
           <div className="mt-4">
-            <Link
-              href={`/solo/game?leagueId=${encodeURIComponent(leagueId)}&clubId=${encodeURIComponent(homeClubId)}`}
-              className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200"
-            >
+              <Link
+               href={`/solo/game?leagueId=${encodeURIComponent(leagueId)}&clubId=${encodeURIComponent(userClubId)}`}
+               className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200"
+             >
               Return to Career
             </Link>
           </div>

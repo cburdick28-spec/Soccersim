@@ -83,27 +83,37 @@ const initialTactics = (): TeamTactics => ({
 
 const average = (values: number[]) => (values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0);
 
+export const effectiveRating = (player: Player, minute = 0) => {
+  const baseOverall =
+    (player.pace + player.shooting + player.passing + player.dribbling + player.defending + player.physical) / 6;
+  const formModifier = (player.form - 50) * 0.15;
+  const moraleModifier = (player.morale - 70) * 0.1;
+  const fatiguePenalty = ((100 - player.fitness) * 0.08 + minute * 0.06);
+  return clamp(baseOverall + formModifier + moraleModifier - fatiguePenalty, 1, 99);
+};
+
 const calculateTeamStrength = (
   players: Player[],
   tactics: TeamTactics,
   isHome: boolean,
   momentum: number,
+  minute: number,
 ) => {
-  const attack = average(players.map((p) => p.shooting + p.dribbling + p.passing)) / 3;
-  const defense = average(players.map((p) => p.defending + p.physical)) / 2;
-  const pace = average(players.map((p) => p.pace));
+  const attack = average(players.map((p) => effectiveRating(p, minute) * 0.45 + (p.shooting + p.dribbling + p.passing) / 6));
+  const defense = average(players.map((p) => effectiveRating(p, minute) * 0.4 + (p.defending + p.physical) / 4));
+  const pace = average(players.map((p) => clamp(p.pace - minute * 0.04, 1, 99)));
 
   const moraleFactor = 1 + (average(players.map((p) => p.morale)) - 70) / 1000;
-  const formFactor = 1 + (average(players.map((p) => p.form)) - 50) / 333;
-  const fitnessDrop = clamp((100 - average(players.map((p) => p.fitness))) / 100, 0, 0.3);
+  const formFactor = 1 + (average(players.map((p) => p.form)) - 50) / 420;
+  const fitnessDrop = clamp((100 - average(players.map((p) => p.fitness))) / 120 + minute / 420, 0, 0.45);
   const fitnessFactor = 1 - fitnessDrop;
-  const homeFactor = isHome ? 1.07 : 1;
-  const tacticAttack = 1 + tactics.balance * 0.05 + (tactics.tempo - 55) * 0.002;
-  const tacticDefense = 1 - tactics.balance * 0.03 + (tactics.pressing - 55) * 0.001;
-  const momentumFactor = 1 + momentum * 0.06;
+  const homeFactor = isHome ? 1.06 : 1;
+  const tacticAttack = 1 + tactics.balance * 0.03 + (tactics.tempo - 55) * 0.0016;
+  const tacticDefense = 1 - tactics.balance * 0.02 + (tactics.pressing - 55) * 0.0018;
+  const momentumFactor = 1 + momentum * 0.05;
 
   const overall =
-    (attack * 0.45 + defense * 0.35 + pace * 0.2) *
+    (attack * 0.4 + defense * 0.42 + pace * 0.18) *
     moraleFactor *
     formFactor *
     fitnessFactor *
@@ -215,10 +225,9 @@ export function makeSubstitution(
 
     const playersOnFieldHome = [...state.playersOnFieldHome];
     const benchHome = [...state.benchHome];
-    const playerOut = playersOnFieldHome[outIndex];
     const playerIn = benchHome[inIndex];
     playersOnFieldHome[outIndex] = playerIn;
-    benchHome[inIndex] = playerOut;
+    benchHome.splice(inIndex, 1);
 
     return {
       ...state,
@@ -231,7 +240,7 @@ export function makeSubstitution(
           minute: state.minute,
           type: "substitution",
           team: "home",
-          text: `${playerOut.name} off, ${playerIn.name} on`,
+           text: `Substitution made: ${playerIn.name} enters.`,
         },
       ],
     };
@@ -249,10 +258,9 @@ export function makeSubstitution(
 
   const playersOnFieldAway = [...state.playersOnFieldAway];
   const benchAway = [...state.benchAway];
-  const playerOut = playersOnFieldAway[outIndex];
   const playerIn = benchAway[inIndex];
   playersOnFieldAway[outIndex] = playerIn;
-  benchAway[inIndex] = playerOut;
+  benchAway.splice(inIndex, 1);
 
   return {
     ...state,
@@ -265,10 +273,10 @@ export function makeSubstitution(
         minute: state.minute,
         type: "substitution",
         team: "away",
-        text: `${playerOut.name} off, ${playerIn.name} on`,
-      },
-    ],
-  };
+         text: `Substitution made: ${playerIn.name} enters.`,
+       },
+     ],
+   };
 }
 
 const pushEvent = (state: MatchState, event: MatchEvent): MatchState => ({
@@ -285,17 +293,40 @@ export function tickMatch(state: MatchState): MatchState {
   const minute = Math.min(state.minute + increment, 90);
   let next = { ...state, minute };
 
+  const maybeAiSubstitution = (team: TeamSide) => {
+    const isHome = team === "home";
+    const subsUsed = isHome ? next.subsUsedHome : next.subsUsedAway;
+    if (minute < 55 || subsUsed >= MAX_SUBS || Math.random() > 0.2) {
+      return;
+    }
+    const onField = isHome ? next.playersOnFieldHome : next.playersOnFieldAway;
+    const bench = isHome ? next.benchHome : next.benchAway;
+    if (bench.length === 0 || onField.length === 0) {
+      return;
+    }
+    const out = [...onField].sort((a, b) => effectiveRating(a, minute) - effectiveRating(b, minute))[0];
+    const incoming = [...bench].sort((a, b) => effectiveRating(b, minute) - effectiveRating(a, minute))[0];
+    if (!out || !incoming) {
+      return;
+    }
+    next = makeSubstitution(next, team, out.id, incoming.id);
+  };
+  maybeAiSubstitution("home");
+  maybeAiSubstitution("away");
+
   const homeStrength = calculateTeamStrength(
     next.playersOnFieldHome,
     next.tacticsHome,
     true,
     clamp(next.momentum, -1, 1),
+    minute,
   );
   const awayStrength = calculateTeamStrength(
     next.playersOnFieldAway,
     next.tacticsAway,
     false,
     clamp(-next.momentum, -1, 1),
+    minute,
   );
 
   const possession = normalizePossession(
@@ -312,10 +343,17 @@ export function tickMatch(state: MatchState): MatchState {
     const own = team === "home" ? homeStrength : awayStrength;
     const opp = team === "home" ? awayStrength : homeStrength;
     const attackDiff = own.attack - opp.defense;
-    const shotChance = clamp(0.13 + attackDiff / 250 + randomBetween(-0.06, 0.06), 0.04, 0.32);
-    const onTargetChance = clamp(0.33 + own.attack / 220 - opp.defense / 260, 0.2, 0.7);
-    const goalChance = clamp(0.1 + attackDiff / 270 + randomBetween(-0.04, 0.04), 0.03, 0.45);
-    const xgShot = clamp(goalChance * randomBetween(0.7, 1.3), 0.01, 0.7);
+    const shotChance = clamp(0.1 + attackDiff / 340 + randomBetween(-0.05, 0.05), 0.03, 0.2);
+    const bigChanceChance = clamp(0.09 + attackDiff / 500, 0.03, 0.2);
+    const onTargetChance = clamp(0.3 + own.attack / 320 - opp.defense / 360, 0.18, 0.52);
+    const defensiveErrorChance = clamp(0.03 + (opp.defense - own.attack) / -700, 0.01, 0.09);
+    const baseGoalChance = clamp(0.07 + attackDiff / 430 + randomBetween(-0.03, 0.03), 0.02, 0.24);
+    const goalChance = clamp(
+      baseGoalChance + (Math.random() < bigChanceChance ? 0.12 : 0) + (Math.random() < defensiveErrorChance ? 0.1 : 0),
+      0.02,
+      0.42,
+    );
+    const xgShot = clamp(goalChance * randomBetween(0.55, 1.1), 0.01, 0.55);
 
     if (Math.random() > shotChance) {
       return;
@@ -358,7 +396,7 @@ export function tickMatch(state: MatchState): MatchState {
         minute,
         team,
         type: "goal",
-        text: `GOAL! ${team === "home" ? "Home" : "Away"} team score at ${minute}'.`,
+        text: `GOAL! ${team === "home" ? "Home" : "Away"} strike at ${minute}'.`,
       });
       return;
     }
