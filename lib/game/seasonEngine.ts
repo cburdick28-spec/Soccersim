@@ -601,8 +601,6 @@ function simulateFixture(contextHome: ClubSimulationContext, contextAway: ClubSi
   const attackingActions = clamp(Math.round(20 + randomBetween(-4, 5)), 12, 26);
   let homeGoals = 0;
   let awayGoals = 0;
-  let homeShots = 0;
-  let awayShots = 0;
   let homeXg = 0;
   let awayXg = 0;
   const commentary: string[] = [];
@@ -627,10 +625,8 @@ function simulateFixture(contextHome: ClubSimulationContext, contextAway: ClubSi
     const conversionProbability = clamp(shotXg + (isError ? 0.18 : 0) + randomBetween(-0.05, 0.03), 0.04, 0.62);
 
     if (homeAttack) {
-      homeShots += 1;
       homeXg += shotXg;
     } else {
-      awayShots += 1;
       awayXg += shotXg;
     }
 

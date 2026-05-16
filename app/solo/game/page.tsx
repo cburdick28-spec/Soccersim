@@ -59,7 +59,7 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
 
   const upcomingOpponentId =
     upcomingFixture?.home_club_id === selectedClubId
-      ? upcomingFixture.away_club_id
+      ? (upcomingFixture?.away_club_id ?? null)
       : upcomingFixture?.home_club_id;
   const upcomingOpponentName = upcomingOpponentId ? clubNameById.get(upcomingOpponentId) ?? "Unknown Club" : null;
   const canPlayUpcomingMatch =
