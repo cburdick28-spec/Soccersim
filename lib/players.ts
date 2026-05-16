@@ -4,9 +4,9 @@ import type { Player } from "@/types/player";
 export type League = {
   id: string;
   name: string;
-  country: string;
-  reputation: number;
-  tier: number;
+  country?: string;
+  reputation?: number;
+  tier?: number;
 };
 
 export type Club = {
@@ -77,22 +77,18 @@ const toPlayer = (row: RawPlayerRow): Player => {
   };
 };
 
-export async function getLeagues(limit = 200): Promise<League[]> {
+export async function getLeagues(): Promise<League[]> {
   const supabase = getSupabaseClient();
-  const { data, error } = await supabase
+  const { data: leagues, error } = await supabase
     .from("leagues")
-    .select("id, name, country, reputation, tier")
-    .order("tier", { ascending: true })
-    .order("reputation", { ascending: false })
-    .limit(limit);
+    .select("id, name")
+    .order("name");
 
   if (error) {
     throw new Error(`Failed to fetch leagues: ${error.message}`);
   }
 
-  const leagues = (data ?? []) as League[];
-  console.log("[getLeagues] result:", leagues.length, "leagues", leagues.slice(0, 3).map((l) => ({ id: l.id, name: l.name })));
-  return leagues;
+  return (leagues ?? []) as League[];
 }
 
 export async function getLeagueById(leagueId: string): Promise<League | null> {
@@ -111,22 +107,18 @@ export async function getLeagueById(leagueId: string): Promise<League | null> {
 }
 
 export async function getClubsByLeague(leagueId: string): Promise<Club[]> {
-  console.log("[getClubsByLeague] querying for leagueId:", leagueId);
   const supabase = getSupabaseClient();
-  const { data, error } = await supabase
+  const { data: clubs, error } = await supabase
     .from("clubs")
-    .select("id, league_id, name, reputation, finances")
+    .select("*")
     .eq("league_id", leagueId)
-    .order("reputation", { ascending: false })
-    .order("name", { ascending: true });
+    .order("name");
 
   if (error) {
     throw new Error(`Failed to fetch clubs by league: ${error.message}`);
   }
 
-  const clubs = (data ?? []) as Club[];
-  console.log("[getClubsByLeague] result:", clubs.length, "clubs for leagueId:", leagueId, clubs.slice(0, 3).map((c) => ({ id: c.id, name: c.name })));
-  return clubs;
+  return (clubs ?? []) as Club[];
 }
 
 export async function getClubById(clubId: string): Promise<Club | null> {
