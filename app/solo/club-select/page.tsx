@@ -8,7 +8,6 @@ import { getSupabaseClient } from "@/lib/supabase";
 
 export default function ClubSelectPage() {
   const router = useRouter();
-  const supabase = getSupabaseClient();
   const [allLeagues, setAllLeagues] = useState<League[]>([]);
   const [selectedLeagueId, setSelectedLeagueId] = useState<string>("");
   const [selectedClubId, setSelectedClubId] = useState<string>("");
@@ -49,6 +48,7 @@ export default function ClubSelectPage() {
       }
 
       try {
+        const supabase = getSupabaseClient();
         const { data: clubs } = await supabase
           .from("clubs")
           .select("*")
@@ -73,7 +73,7 @@ export default function ClubSelectPage() {
     return () => {
       isMounted = false;
     };
-  }, [selectedLeagueId, supabase]);
+  }, [selectedLeagueId]);
 
   const handleStartCareer = () => {
     if (selectedClubId && selectedLeagueId) {
