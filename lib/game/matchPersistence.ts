@@ -29,6 +29,7 @@ async function getCurrentSeasonId(): Promise<string> {
   const { data, error } = await supabase
     .from("seasons")
     .select("id")
+    .eq("status", "active")
     .order("started_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -39,6 +40,21 @@ async function getCurrentSeasonId(): Promise<string> {
   }
 
   return season.id;
+}
+
+async function getCurrentSeasonMatchday(seasonId: string): Promise<number> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from("seasons")
+    .select("current_matchday")
+    .eq("id", seasonId)
+    .single();
+
+  if (error || !data) {
+    throw new Error(`Failed to fetch current matchday: ${error?.message ?? "No season available"}`);
+  }
+
+  return (data as { current_matchday: number }).current_matchday ?? 1;
 }
 
 async function upsertStanding(params: {
@@ -129,6 +145,7 @@ async function updatePlayerMoraleAndForm(players: Player[], didWin: boolean, did
 export async function persistMatchAndProgress(input: PersistMatchInput): Promise<void> {
   const supabase = getSupabaseClient();
   const seasonId = await getCurrentSeasonId();
+  const currentMatchday = await getCurrentSeasonMatchday(seasonId);
   const {
     leagueId,
     homeClubId,
@@ -140,6 +157,9 @@ export async function persistMatchAndProgress(input: PersistMatchInput): Promise
 
   const { error: matchError } = await supabase.from("matches").insert({
     season_id: seasonId,
+    league_id: leagueId,
+    matchday: currentMatchday,
+    status: "completed",
     home_club_id: homeClubId,
     away_club_id: awayClubId,
     home_goals: state.homeScore,
