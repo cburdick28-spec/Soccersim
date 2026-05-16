@@ -55,6 +55,7 @@ export default function ClubSelectPage() {
 
       try {
         const clubs = await getClubsByLeague(selectedLeagueId);
+        console.log("[club-select] selectedLeagueId:", selectedLeagueId, "| clubs found:", clubs.length);
         if (!isMounted) {
           return;
         }

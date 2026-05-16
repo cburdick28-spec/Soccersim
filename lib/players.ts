@@ -90,7 +90,9 @@ export async function getLeagues(limit = 200): Promise<League[]> {
     throw new Error(`Failed to fetch leagues: ${error.message}`);
   }
 
-  return (data ?? []) as League[];
+  const leagues = (data ?? []) as League[];
+  console.log("[getLeagues] result:", leagues.length, "leagues", leagues.slice(0, 3).map((l) => ({ id: l.id, name: l.name })));
+  return leagues;
 }
 
 export async function getLeagueById(leagueId: string): Promise<League | null> {
@@ -109,6 +111,7 @@ export async function getLeagueById(leagueId: string): Promise<League | null> {
 }
 
 export async function getClubsByLeague(leagueId: string): Promise<Club[]> {
+  console.log("[getClubsByLeague] querying for leagueId:", leagueId);
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from("clubs")
@@ -121,7 +124,9 @@ export async function getClubsByLeague(leagueId: string): Promise<Club[]> {
     throw new Error(`Failed to fetch clubs by league: ${error.message}`);
   }
 
-  return (data ?? []) as Club[];
+  const clubs = (data ?? []) as Club[];
+  console.log("[getClubsByLeague] result:", clubs.length, "clubs for leagueId:", leagueId, clubs.slice(0, 3).map((c) => ({ id: c.id, name: c.name })));
+  return clubs;
 }
 
 export async function getClubById(clubId: string): Promise<Club | null> {
