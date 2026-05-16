@@ -2,15 +2,16 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { getClubsByLeague, getLeagues, type Club, type League } from "@/lib/players";
+import { useEffect, useState } from "react";
+import { getLeagues, type Club, type League } from "@/lib/players";
+import { getSupabaseClient } from "@/lib/supabase";
 
 export default function ClubSelectPage() {
   const router = useRouter();
+  const supabase = getSupabaseClient();
   const [allLeagues, setAllLeagues] = useState<League[]>([]);
-  const [selectedLeagueId, setSelectedLeagueId] = useState<string | null>(null);
-  const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedLeagueId, setSelectedLeagueId] = useState<string>("");
+  const [selectedClubId, setSelectedClubId] = useState<string>("");
   const [clubsInSelectedLeague, setClubsInSelectedLeague] = useState<Club[]>([]);
 
   useEffect(() => {
@@ -38,12 +39,6 @@ export default function ClubSelectPage() {
     };
   }, []);
 
-  const filteredLeagues = useMemo(
-    () =>
-      allLeagues.filter((league) => league.name.toLowerCase().includes(searchQuery.toLowerCase())),
-    [allLeagues, searchQuery]
-  );
-
   useEffect(() => {
     let isMounted = true;
 
@@ -54,12 +49,17 @@ export default function ClubSelectPage() {
       }
 
       try {
-        const clubs = await getClubsByLeague(selectedLeagueId);
-        console.log("[club-select] selectedLeagueId:", selectedLeagueId, "| clubs found:", clubs.length);
+        const { data: clubs } = await supabase
+          .from("clubs")
+          .select("*")
+          .eq("league_id", selectedLeagueId)
+          .order("name");
+        console.log("selectedLeagueId", selectedLeagueId);
+        console.log("clubs result", clubs);
         if (!isMounted) {
           return;
         }
-        setClubsInSelectedLeague(clubs);
+        setClubsInSelectedLeague((clubs ?? []) as Club[]);
       } catch {
         if (!isMounted) {
           return;
@@ -73,7 +73,7 @@ export default function ClubSelectPage() {
     return () => {
       isMounted = false;
     };
-  }, [selectedLeagueId]);
+  }, [selectedLeagueId, supabase]);
 
   const handleStartCareer = () => {
     if (selectedClubId && selectedLeagueId) {
@@ -94,40 +94,23 @@ export default function ClubSelectPage() {
 
       <section className="panel p-6">
         <label className="mb-4 block">
-          <span className="text-sm font-semibold">Search Leagues</span>
-          <input
-            type="text"
-            placeholder="e.g., Premier League, La Liga..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+          <span className="text-sm font-semibold">Select League</span>
+          <select
+            value={selectedLeagueId}
+            onChange={(event) => {
+              setSelectedLeagueId(event.target.value);
+              setSelectedClubId("");
+            }}
             className="mt-2 w-full rounded-md border border-slate-700 bg-slate-900/50 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-sky-400 focus:outline-none"
-          />
+          >
+            <option value="">Choose a league</option>
+            {allLeagues.map((league) => (
+              <option key={league.id} value={league.id}>
+                {league.name}
+              </option>
+            ))}
+          </select>
         </label>
-
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredLeagues.map((league) => (
-            <button
-              key={league.id}
-              onClick={() => {
-                setSelectedLeagueId(league.id);
-                setSelectedClubId(null);
-              }}
-              className={`rounded-lg border px-4 py-3 text-left transition ${
-                selectedLeagueId === league.id
-                  ? "border-sky-400 bg-sky-500/15 text-sky-200"
-                  : "border-slate-700 text-slate-200 hover:border-slate-600"
-              }`}
-            >
-              <span className="font-medium">{league.name}</span>
-            </button>
-          ))}
-        </div>
-
-        {filteredLeagues.length === 0 && (
-          <p className="mt-4 text-center text-sm text-slate-400">
-            No leagues found matching &quot;{searchQuery}&quot;
-          </p>
-        )}
       </section>
 
       {selectedLeagueId && (
@@ -155,8 +138,7 @@ export default function ClubSelectPage() {
 
       <section className="panel p-6">
         <p className="text-xs text-slate-400">
-          <strong>{filteredLeagues.length}</strong> leagues available
-          {searchQuery && ` matching &quot;${searchQuery}&quot;`}
+          <strong>{allLeagues.length}</strong> leagues available
           {selectedLeagueId && (
             <>
               {" "}
