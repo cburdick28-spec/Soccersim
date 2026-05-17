@@ -6,6 +6,27 @@ import { useEffect, useRef, useState } from "react";
 import { getLeagues, type Club, type League } from "@/lib/players";
 import { supabase } from "@/lib/supabase/client";
 
+const currencyFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
+
+function getReputationStars(reputation: number) {
+  const filled = Math.max(1, Math.min(5, Math.round(reputation / 20)));
+  return `${"★".repeat(filled)}${"☆".repeat(5 - filled)}`;
+}
+
+function getBoardObjective(reputation: number) {
+  if (reputation >= 80) {
+    return "Compete for the title and qualify for continental football.";
+  }
+  if (reputation >= 65) {
+    return "Push for a top-half finish and challenge for continental spots.";
+  }
+  return "Stabilize the club, avoid relegation risk, and build squad value.";
+}
+
 export default function ClubSelectPage() {
   const router = useRouter();
   const [allLeagues, setAllLeagues] = useState<League[]>([]);
@@ -135,11 +156,7 @@ export default function ClubSelectPage() {
             </p>
             <p className="mt-1">
               Average club reputation: <strong>{averageReputation}</strong> • Combined finances:{" "}
-              <strong>
-                {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(
-                  totalFinances,
-                )}
-              </strong>
+              <strong>{currencyFormatter.format(totalFinances)}</strong>
             </p>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -167,8 +184,7 @@ export default function ClubSelectPage() {
                     <div>
                       <span className="font-medium">{club.name}</span>
                       <p className="mt-1 text-xs text-slate-400">
-                        {"★".repeat(Math.max(1, Math.min(5, Math.round(club.reputation / 20))))}
-                        {"☆".repeat(5 - Math.max(1, Math.min(5, Math.round(club.reputation / 20))))} Reputation
+                        {getReputationStars(club.reputation)} Reputation
                       </p>
                     </div>
                   </div>
@@ -179,24 +195,11 @@ export default function ClubSelectPage() {
                   )}
                 </div>
                 <p className="mt-3 text-xs text-slate-300">
-                  Finances:{" "}
-                  <strong>
-                    {new Intl.NumberFormat("en-US", {
-                      style: "currency",
-                      currency: "USD",
-                      maximumFractionDigits: 0,
-                    }).format(club.finances)}
-                  </strong>
+                  Finances: <strong>{currencyFormatter.format(club.finances)}</strong>
                 </p>
                 <p className="mt-1 text-xs text-slate-400">
                   Board objective:{" "}
-                  <strong className="text-slate-200">
-                    {club.reputation >= 80
-                      ? "Compete for the title and qualify for continental football."
-                      : club.reputation >= 65
-                        ? "Push for a top-half finish and challenge for continental spots."
-                        : "Stabilize the club, avoid relegation risk, and build squad value."}
-                  </strong>
+                  <strong className="text-slate-200">{getBoardObjective(club.reputation)}</strong>
                 </p>
               </button>
             ))}
