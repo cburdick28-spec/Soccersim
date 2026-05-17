@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { getClubsByLeague, getLeagues, type Club, type League } from "@/lib/players";
+import { useEffect, useRef, useState } from "react";
+import { getLeagues, type Club, type League } from "@/lib/players";
+import { supabase } from "@/lib/supabase/client";
 
 export default function ClubSelectPage() {
   const router = useRouter();
@@ -11,6 +12,7 @@ export default function ClubSelectPage() {
   const [selectedLeagueId, setSelectedLeagueId] = useState<string>("");
   const [selectedClubId, setSelectedClubId] = useState<string>("");
   const [clubsInSelectedLeague, setClubsInSelectedLeague] = useState<Club[]>([]);
+  const latestClubRequestId = useRef(0);
 
   useEffect(() => {
     let isMounted = true;
@@ -39,6 +41,8 @@ export default function ClubSelectPage() {
 
   useEffect(() => {
     let isMounted = true;
+    const requestId = latestClubRequestId.current + 1;
+    latestClubRequestId.current = requestId;
 
     async function loadLeagueClubs() {
       if (!selectedLeagueId) {
@@ -47,15 +51,28 @@ export default function ClubSelectPage() {
       }
 
       try {
-        const clubs = await getClubsByLeague(selectedLeagueId);
         console.log("selectedLeagueId", selectedLeagueId);
-        console.log("clubs result", clubs);
-        if (!isMounted) {
+        const { data, error } = await supabase
+          .from("clubs")
+          .select("*")
+          .eq("league_id", selectedLeagueId)
+          .order("name");
+        console.log("clubs query result", data);
+        console.log("clubs length", data?.length);
+        console.log("clubs query error", error);
+
+        if (!isMounted || requestId !== latestClubRequestId.current) {
           return;
         }
-        setClubsInSelectedLeague(clubs);
+
+        if (error) {
+          setClubsInSelectedLeague([]);
+          return;
+        }
+
+        setClubsInSelectedLeague((data ?? []) as Club[]);
       } catch {
-        if (!isMounted) {
+        if (!isMounted || requestId !== latestClubRequestId.current) {
           return;
         }
         setClubsInSelectedLeague([]);
@@ -68,6 +85,10 @@ export default function ClubSelectPage() {
       isMounted = false;
     };
   }, [selectedLeagueId]);
+
+  useEffect(() => {
+    console.log("clubs state", clubsInSelectedLeague);
+  }, [clubsInSelectedLeague]);
 
   const handleStartCareer = () => {
     if (selectedClubId && selectedLeagueId) {
@@ -127,6 +148,9 @@ export default function ClubSelectPage() {
               </button>
             ))}
           </div>
+          <pre className="mt-4 overflow-auto rounded-md border border-slate-800 bg-slate-950/50 p-3 text-xs text-slate-300">
+            {JSON.stringify(clubsInSelectedLeague, null, 2)}
+          </pre>
         </section>
       )}
 
