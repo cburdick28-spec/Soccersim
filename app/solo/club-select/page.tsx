@@ -11,9 +11,12 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
   currency: "USD",
   maximumFractionDigits: 0,
 });
+const REPUTATION_PER_STAR = 20;
+const CARD_HOVER_GLOW_CLASS =
+  "hover:-translate-y-0.5 hover:shadow-[0_0_0_1px_rgba(56,189,248,0.3),0_12px_24px_rgba(15,23,42,0.45)]";
 
 function getReputationStars(reputation: number) {
-  const filled = Math.max(0, Math.min(5, Math.round(reputation / 20)));
+  const filled = Math.max(0, Math.min(5, Math.round(reputation / REPUTATION_PER_STAR)));
   return `${"★".repeat(filled)}${"☆".repeat(5 - filled)}`;
 }
 
@@ -53,10 +56,13 @@ export default function ClubSelectPage() {
     [allLeagues, selectedLeagueId],
   );
   const averageReputation = useMemo(
-    () =>
-      clubsInSelectedLeague.length > 0
-        ? Math.round(clubsInSelectedLeague.reduce((total, club) => total + club.reputation, 0) / clubsInSelectedLeague.length)
-        : 0,
+    () => {
+      if (clubsInSelectedLeague.length === 0) {
+        return 0;
+      }
+      const totalReputation = clubsInSelectedLeague.reduce((total, club) => total + club.reputation, 0);
+      return Math.round(totalReputation / clubsInSelectedLeague.length);
+    },
     [clubsInSelectedLeague],
   );
   const totalFinances = useMemo(
@@ -187,7 +193,7 @@ export default function ClubSelectPage() {
               <button
                 key={club.id}
                 onClick={() => setSelectedClubId(club.id)}
-                className={`rounded-lg border px-4 py-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_0_0_1px_rgba(56,189,248,0.3),0_12px_24px_rgba(15,23,42,0.45)] ${
+                className={`rounded-lg border px-4 py-3 text-left transition-all duration-200 ${CARD_HOVER_GLOW_CLASS} ${
                   selectedClubId === club.id
                     ? "border-sky-400 bg-sky-500/15 text-sky-200 shadow-[0_0_0_1px_rgba(56,189,248,0.35)]"
                     : "border-slate-700 text-slate-200 hover:border-slate-500 hover:bg-slate-900/70"
