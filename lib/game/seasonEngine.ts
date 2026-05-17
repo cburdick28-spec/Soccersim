@@ -631,6 +631,14 @@ function simulateFixture(contextHome: ClubSimulationContext, contextAway: ClubSi
 
   const homeXg = clamp(homeExpectedGoals + randomBetween(-0.18, 0.18), 0.1, 3.5);
   const awayXg = clamp(awayExpectedGoals + randomBetween(-0.18, 0.18), 0.1, 3.3);
+  const commentary: string[] = [];
+  if (homeGoals > awayGoals) {
+    commentary.push("Home side converts key chances and controls decisive moments.");
+  } else if (awayGoals > homeGoals) {
+    commentary.push("Away side executes efficiently and edges the key phases.");
+  } else {
+    commentary.push("Balanced match with limited separating moments.");
+  }
 
   const possessionHome = clamp(
     Math.round(50 + strengthGap * 0.2 + randomBetween(-5, 5)),
