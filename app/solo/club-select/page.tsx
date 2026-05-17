@@ -13,6 +13,12 @@ export default function ClubSelectPage() {
   const [selectedClubId, setSelectedClubId] = useState<string>("");
   const [clubsInSelectedLeague, setClubsInSelectedLeague] = useState<Club[]>([]);
   const latestClubRequestId = useRef(0);
+  const selectedLeague = allLeagues.find((league) => league.id === selectedLeagueId) ?? null;
+  const averageReputation =
+    clubsInSelectedLeague.length > 0
+      ? Math.round(clubsInSelectedLeague.reduce((total, club) => total + club.reputation, 0) / clubsInSelectedLeague.length)
+      : 0;
+  const totalFinances = clubsInSelectedLeague.reduce((total, club) => total + club.finances, 0);
 
   useEffect(() => {
     let isMounted = true;
@@ -51,20 +57,11 @@ export default function ClubSelectPage() {
       }
 
       try {
-        console.log("selectedLeagueId", selectedLeagueId);
-        const { data: testData, error: testError } = await supabase.from("clubs").select("*").limit(5);
-        console.log("DIRECT CLUB TEST");
-        console.log(testData);
-        console.log(testError);
-
         const { data, error } = await supabase
           .from("clubs")
           .select("*")
           .eq("league_id", selectedLeagueId)
           .order("name");
-        console.log("clubs query result", data);
-        console.log("clubs length", data?.length);
-        console.log("clubs query error", error);
 
         if (!isMounted || requestId !== latestClubRequestId.current) {
           return;
@@ -90,10 +87,6 @@ export default function ClubSelectPage() {
       isMounted = false;
     };
   }, [selectedLeagueId]);
-
-  useEffect(() => {
-    console.log("clubs state", clubsInSelectedLeague);
-  }, [clubsInSelectedLeague]);
 
   const handleStartCareer = () => {
     if (selectedClubId && selectedLeagueId) {
@@ -135,27 +128,79 @@ export default function ClubSelectPage() {
 
       {selectedLeagueId && (
         <section className="panel p-6">
-          <h2 className="text-lg font-semibold">
-            Clubs in {allLeagues.find((league) => league.id === selectedLeagueId)?.name ?? "Selected league"}
-          </h2>
+          <h2 className="text-lg font-semibold">Clubs in {selectedLeague?.name ?? "Selected league"}</h2>
+          <div className="mt-3 rounded-lg border border-slate-800/80 bg-slate-950/40 p-3 text-xs text-slate-300">
+            <p>
+              <strong>{clubsInSelectedLeague.length}</strong> clubs available in this league.
+            </p>
+            <p className="mt-1">
+              Average club reputation: <strong>{averageReputation}</strong> • Combined finances:{" "}
+              <strong>
+                {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(
+                  totalFinances,
+                )}
+              </strong>
+            </p>
+          </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {clubsInSelectedLeague.map((club) => (
               <button
                 key={club.id}
                 onClick={() => setSelectedClubId(club.id)}
-                className={`rounded-lg border px-4 py-3 text-left transition ${
+                className={`card-glow rounded-lg border px-4 py-3 text-left transition-all duration-200 ${
                   selectedClubId === club.id
-                    ? "border-sky-400 bg-sky-500/15 text-sky-200"
-                    : "border-slate-700 text-slate-200 hover:border-slate-600"
+                    ? "border-sky-400 bg-sky-500/15 text-sky-200 shadow-[0_0_0_1px_rgba(56,189,248,0.35)]"
+                    : "border-slate-700 text-slate-200 hover:border-slate-500 hover:bg-slate-900/70"
                 }`}
+                type="button"
               >
-                <span className="font-medium">{club.name}</span>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-sm font-bold text-slate-100">
+                      {club.name
+                        .split(" ")
+                        .slice(0, 2)
+                        .map((part) => part[0])
+                        .join("")
+                        .toUpperCase()}
+                    </span>
+                    <div>
+                      <span className="font-medium">{club.name}</span>
+                      <p className="mt-1 text-xs text-slate-400">
+                        {"★".repeat(Math.max(1, Math.min(5, Math.round(club.reputation / 20))))}
+                        {"☆".repeat(5 - Math.max(1, Math.min(5, Math.round(club.reputation / 20))))} Reputation
+                      </p>
+                    </div>
+                  </div>
+                  {selectedClubId === club.id && (
+                    <span className="rounded-full border border-sky-300/60 bg-sky-400/20 px-2 py-0.5 text-[10px] font-semibold text-sky-100">
+                      Selected
+                    </span>
+                  )}
+                </div>
+                <p className="mt-3 text-xs text-slate-300">
+                  Finances:{" "}
+                  <strong>
+                    {new Intl.NumberFormat("en-US", {
+                      style: "currency",
+                      currency: "USD",
+                      maximumFractionDigits: 0,
+                    }).format(club.finances)}
+                  </strong>
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  Board objective:{" "}
+                  <strong className="text-slate-200">
+                    {club.reputation >= 80
+                      ? "Compete for the title and qualify for continental football."
+                      : club.reputation >= 65
+                        ? "Push for a top-half finish and challenge for continental spots."
+                        : "Stabilize the club, avoid relegation risk, and build squad value."}
+                  </strong>
+                </p>
               </button>
             ))}
           </div>
-          <pre className="mt-4 overflow-auto rounded-md border border-slate-800 bg-slate-950/50 p-3 text-xs text-slate-300">
-            {JSON.stringify(clubsInSelectedLeague, null, 2)}
-          </pre>
         </section>
       )}
 
@@ -166,7 +211,7 @@ export default function ClubSelectPage() {
             <>
               {" "}
               • <strong>{clubsInSelectedLeague.length}</strong> clubs in{" "}
-              {allLeagues.find((league) => league.id === selectedLeagueId)?.name ?? "selected league"}
+              {selectedLeague?.name ?? "selected league"}
             </>
           )}
         </p>
