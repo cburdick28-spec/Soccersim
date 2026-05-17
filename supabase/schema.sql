@@ -23,10 +23,22 @@ create table if not exists clubs (
   id uuid primary key default gen_random_uuid(),
   league_id uuid not null references leagues(id) on delete cascade,
   name text not null,
+  country text,
   reputation integer not null,
   finances bigint not null default 0,
+  transfer_budget bigint not null default 0,
+  wage_budget bigint not null default 0,
+  board_confidence integer not null default 50,
+  season_expectation text not null default 'Stabilize in the league',
+  board_expectation text not null default 'Stabilize in the league',
+  fan_expectation text not null default 'Stay competitive every matchday',
+  stadium_name text,
+  club_colors jsonb not null default '{"primary":"#1d4ed8","secondary":"#f8fafc"}'::jsonb,
+  founded_year integer,
+  tactical_style text not null default 'Balanced possession',
   manager_id uuid,
   national_team_id uuid,
+  rival_club_id uuid references clubs(id) on delete set null,
   unique (league_id, name)
 );
 create index if not exists clubs_league_idx on clubs(league_id);
@@ -172,6 +184,62 @@ end $$;
 
 alter table standings
   add column if not exists goal_difference integer not null default 0;
+
+alter table clubs
+  add column if not exists country text,
+  add column if not exists transfer_budget bigint not null default 0,
+  add column if not exists wage_budget bigint not null default 0,
+  add column if not exists board_confidence integer not null default 50,
+  add column if not exists season_expectation text not null default 'Stabilize in the league',
+  add column if not exists board_expectation text not null default 'Stabilize in the league',
+  add column if not exists fan_expectation text not null default 'Stay competitive every matchday',
+  add column if not exists stadium_name text,
+  add column if not exists club_colors jsonb not null default '{"primary":"#1d4ed8","secondary":"#f8fafc"}'::jsonb,
+  add column if not exists founded_year integer,
+  add column if not exists tactical_style text not null default 'Balanced possession',
+  add column if not exists rival_club_id uuid references clubs(id) on delete set null;
+
+create or replace function normalize_club_name(raw_name text)
+returns text
+language sql
+immutable
+as $$
+  select lower(regexp_replace(coalesce(raw_name, ''), '[^a-z0-9]+', '', 'g'));
+$$;
+
+create or replace function enforce_club_country_matches_league()
+returns trigger
+language plpgsql
+as $$
+declare
+  league_country text;
+begin
+  select l.country into league_country
+  from leagues l
+  where l.id = new.league_id;
+
+  if league_country is null then
+    return new;
+  end if;
+
+  if new.country is null or btrim(new.country) = '' then
+    new.country := league_country;
+    return new;
+  end if;
+
+  if lower(new.country) <> lower(league_country) then
+    raise exception 'Club % cannot be assigned to league country % (club country: %)', new.name, league_country, new.country;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists clubs_country_validation on clubs;
+create trigger clubs_country_validation
+before insert or update of league_id, country on clubs
+for each row
+execute function enforce_club_country_matches_league();
 
 create table if not exists transfers (
   id uuid primary key default gen_random_uuid(),

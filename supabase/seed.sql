@@ -1017,32 +1017,288 @@ insert into _club_seed (league_name, club_order, club_name) values
   ('Peruvian Liga 1', 20, 'Ayacucho FC')
 ;
 
+create temporary table if not exists _club_alias_map (
+  alias_name text not null,
+  canonical_club_name text not null,
+  canonical_league_name text not null
+) on commit drop;
+
+truncate _club_alias_map;
+
+insert into _club_alias_map (alias_name, canonical_club_name, canonical_league_name) values
+  ('Man City', 'Manchester City', 'Premier League'),
+  ('Spurs', 'Tottenham Hotspur', 'Premier League'),
+  ('Inter', 'Inter Milan', 'Serie A'),
+  ('Bayern', 'Bayern Munich', 'Bundesliga'),
+  ('Shakhtar', 'Shakhtar Donetsk', 'Ukrainian Premier League'),
+  ('Dynamo Kiev', 'Dynamo Kyiv', 'Ukrainian Premier League'),
+  ('PSG', 'Paris Saint-Germain', 'Ligue 1'),
+  ('Atleti', 'Atletico Madrid', 'La Liga');
+
 with target_leagues as (
-  select l.id, l.name, l.country, l.reputation
+  select l.id, l.name, l.country, l.reputation, l.tier
   from leagues l
   join _league_seed ls on ls.name = l.name and ls.country = l.country
 ),
 target_clubs as (
   select
     tl.id as league_id,
+    tl.name as league_name,
+    tl.country as league_country,
+    tl.reputation as league_reputation,
+    tl.tier,
     cs.club_order,
-    cs.club_name,
-    tl.reputation
+    cs.club_name
   from target_leagues tl
   join _club_seed cs on cs.league_name = tl.name
-)
-insert into clubs (league_id, name, reputation, finances)
-select
-  tc.league_id,
-  tc.club_name,
-  greatest(45, tc.reputation - ((tc.club_order - 1) % 18)),
-  25000000 + tc.club_order * 800000
-from target_clubs tc
-where not exists (
-  select 1
+),
+club_identity as (
+  select
+    tc.*,
+    normalize_club_name(tc.club_name) as identity_key,
+    1 as match_priority
+  from target_clubs tc
+  union all
+  select
+    tc.*,
+    normalize_club_name(cam.alias_name) as identity_key,
+    2 as match_priority
+  from target_clubs tc
+  join _club_alias_map cam
+    on cam.canonical_club_name = tc.club_name
+   and cam.canonical_league_name = tc.league_name
+),
+matched_existing as (
+  select distinct on (c.id)
+    c.id,
+    ci.league_id,
+    ci.league_name,
+    ci.league_country,
+    ci.club_name
   from clubs c
-  where c.league_id = tc.league_id and c.name = tc.club_name
-);
+  join club_identity ci on normalize_club_name(c.name) = ci.identity_key
+  order by c.id, ci.match_priority
+)
+update clubs c
+set
+  league_id = me.league_id,
+  name = me.club_name,
+  country = me.league_country
+from matched_existing me
+where c.id = me.id
+  and (
+    c.league_id <> me.league_id
+    or c.name <> me.club_name
+    or coalesce(c.country, '') <> me.league_country
+  )
+  and not exists (
+    select 1
+    from clubs c2
+    where c2.id <> c.id
+      and c2.league_id = me.league_id
+      and normalize_club_name(c2.name) = normalize_club_name(me.club_name)
+  );
+
+with target_leagues as (
+  select l.id, l.name, l.country, l.reputation, l.tier
+  from leagues l
+  join _league_seed ls on ls.name = l.name and ls.country = l.country
+),
+target_clubs as (
+  select
+    tl.id as league_id,
+    tl.name as league_name,
+    tl.country as league_country,
+    tl.reputation as league_reputation,
+    tl.tier,
+    cs.club_order,
+    cs.club_name
+  from target_leagues tl
+  join _club_seed cs on cs.league_name = tl.name
+),
+profiled_clubs as (
+  select
+    tc.league_id,
+    tc.club_name as name,
+    tc.league_country as country,
+    least(
+      99,
+      greatest(
+        45,
+        tc.league_reputation
+          - floor((tc.club_order - 1) * 0.9)::integer
+          + case
+              when tc.club_order <= 2 then 8
+              when tc.club_order <= 6 then 4
+              when tc.club_order >= 18 then -4
+              else 0
+            end
+          - ((tc.tier - 1) * 7)
+      )
+    ) as reputation,
+    tc.club_order,
+    tc.tier
+  from target_clubs tc
+),
+club_financials as (
+  select
+    pc.*,
+    case
+      when pc.reputation >= 90 then 150000000 + ((21 - least(pc.club_order, 20)) * 17000000)
+      when pc.reputation >= 75 then 40000000 + ((21 - least(pc.club_order, 20)) * 4000000)
+      else 5000000 + ((21 - least(pc.club_order, 20)) * 1700000)
+    end::bigint as finances,
+    case
+      when pc.reputation >= 90 then (150000000 + ((21 - least(pc.club_order, 20)) * 17000000)) * 32 / 100
+      when pc.reputation >= 75 then (40000000 + ((21 - least(pc.club_order, 20)) * 4000000)) * 24 / 100
+      else (5000000 + ((21 - least(pc.club_order, 20)) * 1700000)) * 18 / 100
+    end::bigint as transfer_budget,
+    case
+      when pc.reputation >= 90 then (150000000 + ((21 - least(pc.club_order, 20)) * 17000000)) * 14 / 100
+      when pc.reputation >= 75 then (40000000 + ((21 - least(pc.club_order, 20)) * 4000000)) * 12 / 100
+      else (5000000 + ((21 - least(pc.club_order, 20)) * 1700000)) * 10 / 100
+    end::bigint as wage_budget
+  from profiled_clubs pc
+),
+enriched_clubs as (
+  select
+    cf.league_id,
+    cf.name,
+    cf.country,
+    cf.reputation,
+    cf.finances,
+    cf.transfer_budget,
+    cf.wage_budget,
+    greatest(35, least(95, cf.reputation - 4)) as board_confidence,
+    case
+      when cf.reputation >= 95 then 'Challenge for the title and win major trophies'
+      when cf.reputation >= 85 then 'Qualify for continental competition'
+      when cf.reputation >= 75 then 'Push for a strong top-half finish'
+      when cf.reputation >= 65 then 'Secure a stable mid-table finish'
+      else 'Avoid relegation and rebuild progressively'
+    end as season_expectation,
+    case
+      when cf.reputation >= 95 then 'Deliver silverware and maintain elite status'
+      when cf.reputation >= 85 then 'Reach Europe and keep financial discipline'
+      when cf.reputation >= 75 then 'Compete in the top half consistently'
+      when cf.reputation >= 65 then 'Stabilize the project and develop talent'
+      else 'Stay up and improve the squad value'
+    end as board_expectation,
+    case
+      when cf.reputation >= 90 then 'Fans demand trophies and dominant performances'
+      when cf.reputation >= 75 then 'Fans expect competitive football and ambition'
+      else 'Fans expect passion, growth, and survival'
+    end as fan_expectation,
+    case cf.name
+      when 'Manchester City' then 'Etihad Stadium'
+      when 'Manchester United' then 'Old Trafford'
+      when 'Tottenham Hotspur' then 'Tottenham Hotspur Stadium'
+      when 'Arsenal' then 'Emirates Stadium'
+      when 'Liverpool' then 'Anfield'
+      when 'Dynamo Kyiv' then 'NSC Olimpiyskiy'
+      when 'Shakhtar Donetsk' then 'Donbass Arena'
+      else format('%s Stadium', cf.name)
+    end as stadium_name,
+    jsonb_build_object(
+      'primary', (array['#1d4ed8','#0f766e','#7c3aed','#b91c1c','#334155','#15803d','#9333ea','#ea580c','#0369a1','#111827'])[1 + ((cf.club_order - 1) % 10)],
+      'secondary', (array['#f8fafc','#fef3c7','#e0e7ff','#dcfce7','#fbcfe8','#f1f5f9','#fde68a','#bfdbfe','#ddd6fe','#fecaca'])[1 + ((cf.club_order + 2) % 10)]
+    ) as club_colors,
+    1880 + ((length(cf.name) * 13 + cf.club_order * 7) % 130) as founded_year,
+    case (cf.club_order % 5)
+      when 0 then 'Vertical transitions'
+      when 1 then 'Balanced possession'
+      when 2 then 'High pressing'
+      when 3 then 'Counter-attacking'
+      else 'Compact defensive block'
+    end as tactical_style
+  from club_financials cf
+)
+insert into clubs (
+  league_id,
+  name,
+  country,
+  reputation,
+  finances,
+  transfer_budget,
+  wage_budget,
+  board_confidence,
+  season_expectation,
+  board_expectation,
+  fan_expectation,
+  stadium_name,
+  club_colors,
+  founded_year,
+  tactical_style
+)
+select
+  ec.league_id,
+  ec.name,
+  ec.country,
+  ec.reputation,
+  ec.finances,
+  ec.transfer_budget,
+  ec.wage_budget,
+  ec.board_confidence,
+  ec.season_expectation,
+  ec.board_expectation,
+  ec.fan_expectation,
+  ec.stadium_name,
+  ec.club_colors,
+  ec.founded_year,
+  ec.tactical_style
+from enriched_clubs ec
+on conflict (league_id, name) do update
+set
+  country = excluded.country,
+  reputation = excluded.reputation,
+  finances = excluded.finances,
+  transfer_budget = excluded.transfer_budget,
+  wage_budget = excluded.wage_budget,
+  board_confidence = excluded.board_confidence,
+  season_expectation = excluded.season_expectation,
+  board_expectation = excluded.board_expectation,
+  fan_expectation = excluded.fan_expectation,
+  stadium_name = excluded.stadium_name,
+  club_colors = excluded.club_colors,
+  founded_year = excluded.founded_year,
+  tactical_style = excluded.tactical_style;
+
+do $$
+begin
+  if exists (
+    select 1
+    from clubs c
+    join leagues l on l.id = c.league_id
+    where lower(coalesce(c.country, '')) <> lower(l.country)
+  ) then
+    raise exception 'Club-country validation failed: one or more clubs are assigned to a foreign domestic league.';
+  end if;
+end $$;
+
+with rival_pairs as (
+  select * from (values
+    ('Manchester City', 'Manchester United'),
+    ('Manchester United', 'Manchester City'),
+    ('Tottenham Hotspur', 'Arsenal'),
+    ('Arsenal', 'Tottenham Hotspur'),
+    ('Liverpool', 'Everton'),
+    ('Everton', 'Liverpool'),
+    ('Celtic', 'Rangers'),
+    ('Rangers', 'Celtic'),
+    ('Inter Milan', 'Milan'),
+    ('Milan', 'Inter Milan'),
+    ('Real Madrid', 'Barcelona'),
+    ('Barcelona', 'Real Madrid'),
+    ('Dynamo Kyiv', 'Shakhtar Donetsk'),
+    ('Shakhtar Donetsk', 'Dynamo Kyiv')
+  ) as rp(club_name, rival_name)
+)
+update clubs c
+set rival_club_id = rival.id
+from rival_pairs rp
+join clubs rival on normalize_club_name(rival.name) = normalize_club_name(rp.rival_name)
+where normalize_club_name(c.name) = normalize_club_name(rp.club_name)
+  and c.rival_club_id is distinct from rival.id;
 
 with target_clubs as (
   select c.id, c.name, l.country
