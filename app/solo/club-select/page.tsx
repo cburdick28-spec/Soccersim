@@ -11,13 +11,15 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
   currency: "USD",
   maximumFractionDigits: 0,
 });
+const MAX_REPUTATION_STARS = 5;
 const REPUTATION_PER_STAR = 20;
+const DEFAULT_CLUB_BADGE = "FC";
 const CARD_HOVER_GLOW_CLASS =
   "hover:-translate-y-0.5 hover:shadow-[0_0_0_1px_rgba(56,189,248,0.3),0_12px_24px_rgba(15,23,42,0.45)]";
 
 function getReputationStars(reputation: number) {
-  const filled = Math.max(0, Math.min(5, Math.round(reputation / REPUTATION_PER_STAR)));
-  return `${"★".repeat(filled)}${"☆".repeat(5 - filled)}`;
+  const filled = Math.max(0, Math.min(MAX_REPUTATION_STARS, Math.round(reputation / REPUTATION_PER_STAR)));
+  return `${"★".repeat(filled)}${"☆".repeat(MAX_REPUTATION_STARS - filled)}`;
 }
 
 function getClubBadgeLabel(clubName: string) {
@@ -31,7 +33,7 @@ function getClubBadgeLabel(clubName: string) {
     .filter(Boolean)
     .join("")
     .toUpperCase();
-  return initials || "FC";
+  return initials || DEFAULT_CLUB_BADGE;
 }
 
 function getBoardObjective(reputation: number) {
