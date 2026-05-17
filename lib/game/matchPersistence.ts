@@ -15,6 +15,10 @@ type PersistMatchInput = {
 };
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const BASE_FORM_VALUE = 45;
+const FORM_POINTS_MULTIPLIER = 16;
+const MIN_FITNESS_DROP = 8;
+const FITNESS_DROP_VARIANCE = 5;
 
 async function getCurrentSeasonId(): Promise<string> {
   const supabase = getSupabaseClient();
@@ -76,7 +80,7 @@ async function calculateRecentForm(clubId: string, seasonId: string, leagueId: s
   }, 0);
 
   const averagePoints = totalPoints / matches.length;
-  return clamp(Math.round(45 + averagePoints * 16), 1, 99);
+  return clamp(Math.round(BASE_FORM_VALUE + averagePoints * FORM_POINTS_MULTIPLIER), 1, 99);
 }
 
 async function updatePlayerMoraleAndForm(
@@ -93,7 +97,7 @@ async function updatePlayerMoraleAndForm(
 
   await Promise.all(
     players.map(async (player) => {
-      const fitnessDrop = 8 + Math.floor(Math.random() * 5);
+      const fitnessDrop = MIN_FITNESS_DROP + Math.floor(Math.random() * FITNESS_DROP_VARIANCE);
       const { error } = await supabase
         .from("players")
         .update({

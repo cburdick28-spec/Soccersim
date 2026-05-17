@@ -81,6 +81,12 @@ export type GameState = {
 };
 
 const FIXTURE_BATCH_SIZE = 400;
+const GOAL_VARIANCE = 0.55;
+const DRAW_BREAK_RATING_GAP_THRESHOLD = 7;
+const DRAW_BREAK_FAVOR_STRONGER_PROBABILITY = 0.62;
+const BLOWOUT_REDUCTION_RATING_GAP_THRESHOLD = 12;
+const BLOWOUT_REDUCTION_GOAL_GAP_THRESHOLD = 2;
+const BLOWOUT_REDUCTION_PROBABILITY = 0.5;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const randomBetween = (min: number, max: number) => Math.random() * (max - min) + min;
@@ -605,14 +611,14 @@ function simulateFixture(contextHome: ClubSimulationContext, contextAway: ClubSi
   const homeExpectedGoals = clamp(1.22 + strengthGap * 0.018 + randomBetween(-0.22, 0.22), 0.2, 2.9);
   const awayExpectedGoals = clamp(1.02 - strengthGap * 0.016 + randomBetween(-0.22, 0.22), 0.2, 2.7);
 
-  let homeGoals = clamp(Math.round(homeExpectedGoals + randomBetween(-0.55, 0.55)), 0, 4);
-  let awayGoals = clamp(Math.round(awayExpectedGoals + randomBetween(-0.55, 0.55)), 0, 4);
+  let homeGoals = clamp(Math.round(homeExpectedGoals + randomBetween(-GOAL_VARIANCE, GOAL_VARIANCE)), 0, 4);
+  let awayGoals = clamp(Math.round(awayExpectedGoals + randomBetween(-GOAL_VARIANCE, GOAL_VARIANCE)), 0, 4);
 
   const strongerSide = strengthGap >= 0 ? "home" : "away";
   const weakerSide = strongerSide === "home" ? "away" : "home";
   const goalGap = Math.abs(homeGoals - awayGoals);
   const ratingGap = Math.abs(strengthGap);
-  if (ratingGap > 7 && goalGap === 0 && Math.random() < 0.62) {
+  if (ratingGap > DRAW_BREAK_RATING_GAP_THRESHOLD && goalGap === 0 && Math.random() < DRAW_BREAK_FAVOR_STRONGER_PROBABILITY) {
     if (strongerSide === "home" && homeGoals < 4) {
       homeGoals += 1;
     }
@@ -620,7 +626,11 @@ function simulateFixture(contextHome: ClubSimulationContext, contextAway: ClubSi
       awayGoals += 1;
     }
   }
-  if (ratingGap > 12 && goalGap > 2 && Math.random() < 0.5) {
+  if (
+    ratingGap > BLOWOUT_REDUCTION_RATING_GAP_THRESHOLD &&
+    goalGap > BLOWOUT_REDUCTION_GOAL_GAP_THRESHOLD &&
+    Math.random() < BLOWOUT_REDUCTION_PROBABILITY
+  ) {
     if (weakerSide === "home" && homeGoals > 0) {
       homeGoals -= 1;
     }
