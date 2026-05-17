@@ -1,11 +1,12 @@
 import Link from "next/link";
 import {
-  advanceMatchday,
   getActiveSeason,
   getLeagueTable,
   getRecentLeagueResults,
   getUpcomingFixturesForClub,
   initializeSeason,
+  quickSimUserFixture,
+  runMatchday,
 } from "@/lib/game/seasonEngine";
 import { getClubById, getClubsByLeague, getLeagueById, getPlayersByClub } from "@/lib/players";
 
@@ -28,6 +29,10 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
   const clubNameById = new Map(clubsInLeague.map((club) => [club.id, club.name]));
 
   let activeSeason = selectedClubId ? await initializeSeason() : null;
+  if (selectedClubId && selectedLeagueId && activeSeason?.status === "active") {
+    await runMatchday(activeSeason.id, selectedLeagueId, selectedClubId);
+    activeSeason = await getActiveSeason();
+  }
   let upcomingFixture = selectedClubId
     ? await getUpcomingFixturesForClub(selectedClubId, activeSeason?.id)
     : null;
@@ -39,11 +44,12 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
     fixtureId &&
     upcomingFixture?.id === fixtureId
   ) {
-    await advanceMatchday({
+    await quickSimUserFixture({
       seasonId: activeSeason.id,
-      userFixtureId: fixtureId,
-      quickSimUserMatch: true,
+      leagueId: selectedLeagueId,
+      fixtureId,
     });
+    await runMatchday(activeSeason.id, selectedLeagueId, selectedClubId);
     activeSeason = await getActiveSeason();
     upcomingFixture = activeSeason ? await getUpcomingFixturesForClub(selectedClubId, activeSeason.id) : null;
   }
