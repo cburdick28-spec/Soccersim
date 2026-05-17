@@ -621,8 +621,7 @@ function simulateFixture(contextHome: ClubSimulationContext, contextAway: ClubSi
   if (ratingGap > DRAW_BREAK_RATING_GAP_THRESHOLD && goalGap === 0 && Math.random() < DRAW_BREAK_FAVOR_STRONGER_PROBABILITY) {
     if (strongerSide === "home" && homeGoals < 4) {
       homeGoals += 1;
-    }
-    if (strongerSide === "away" && awayGoals < 4) {
+    } else if (strongerSide === "away" && awayGoals < 4) {
       awayGoals += 1;
     }
   }
@@ -1168,9 +1167,7 @@ export async function runMatchday(
     console.info(`[matchday complete] season=${seasonId} matchday=${season.current_matchday}`);
     return { progressed: true, requiresUserMatch: false, season: progressedSeason, gameState, userFixtureId: null };
   } finally {
-    if (getGameStateStatus(seasonId) !== "simulating") {
-      matchdayLocks.delete(seasonId);
-    } else {
+    if (getGameStateStatus(seasonId) === "simulating") {
       setGameState({
         seasonId,
         leagueId,
@@ -1178,8 +1175,8 @@ export async function runMatchday(
         userClubId,
         status: "idle",
       });
-      matchdayLocks.delete(seasonId);
     }
+    matchdayLocks.delete(seasonId);
   }
 }
 
