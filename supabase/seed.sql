@@ -1018,7 +1018,7 @@ insert into _club_seed (league_name, club_order, club_name) values
 ;
 
 with target_leagues as (
-  select l.id, l.name, l.country, l.reputation
+  select l.id, l.name, l.country, l.reputation, l.tier
   from leagues l
   join _league_seed ls on ls.name = l.name and ls.country = l.country
 ),
@@ -1027,16 +1027,46 @@ target_clubs as (
     tl.id as league_id,
     cs.club_order,
     cs.club_name,
-    tl.reputation
+    tl.reputation,
+    tl.tier
   from target_leagues tl
   join _club_seed cs on cs.league_name = tl.name
 )
-insert into clubs (league_id, name, reputation, finances)
+insert into clubs (league_id, name, reputation, finances, transfer_budget, wage_budget)
 select
   tc.league_id,
   tc.club_name,
-  greatest(45, tc.reputation - ((tc.club_order - 1) % 18)),
-  25000000 + tc.club_order * 800000
+  greatest(
+    1,
+    least(
+      100,
+      case
+        when tc.tier = 1 and tc.club_order <= 2 then 90 + ((abs(hashtext(tc.club_name)) + tc.club_order) % 11)
+        when tc.club_order <= 8 then 80 + ((abs(hashtext(tc.club_name)) + tc.club_order) % 10)
+        when tc.club_order <= 13 then 70 + ((abs(hashtext(tc.club_name)) + tc.club_order) % 10)
+        when tc.club_order <= 17 then 60 + ((abs(hashtext(tc.club_name)) + tc.club_order) % 10)
+        else 50 + ((abs(hashtext(tc.club_name)) + tc.club_order) % 10)
+      end
+    )
+  ),
+  case
+    when tc.club_order <= 8 then 150000000 + (abs(hashtext(tc.club_name || ':fin')) % 350000001)
+    when tc.club_order <= 13 then 40000000 + (abs(hashtext(tc.club_name || ':fin')) % 110000001)
+    when tc.club_order <= 17 then 10000000 + (abs(hashtext(tc.club_name || ':fin')) % 50000001)
+    else 1000000 + (abs(hashtext(tc.club_name || ':fin')) % 14000001)
+  end,
+  case
+    when tc.club_order <= 8 then round((150000000 + (abs(hashtext(tc.club_name || ':fin')) % 350000001)) * 0.30)
+    when tc.club_order <= 13 then round((40000000 + (abs(hashtext(tc.club_name || ':fin')) % 110000001)) * 0.28)
+    when tc.club_order <= 17 then round((10000000 + (abs(hashtext(tc.club_name || ':fin')) % 50000001)) * 0.26)
+    else round((1000000 + (abs(hashtext(tc.club_name || ':fin')) % 14000001)) * 0.24)
+  end,
+  case
+    when tc.club_order <= 8 then round((150000000 + (abs(hashtext(tc.club_name || ':fin')) % 350000001)) * 0.40)
+    when tc.club_order <= 13 then round((40000000 + (abs(hashtext(tc.club_name || ':fin')) % 110000001)) * 0.38)
+    when tc.club_order <= 17 then round((10000000 + (abs(hashtext(tc.club_name || ':fin')) % 50000001)) * 0.35)
+    else round((1000000 + (abs(hashtext(tc.club_name || ':fin')) % 14000001)) * 0.33)
+  end
 from target_clubs tc
 where not exists (
   select 1

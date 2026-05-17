@@ -24,7 +24,9 @@ create table if not exists clubs (
   league_id uuid not null references leagues(id) on delete cascade,
   name text not null,
   reputation integer not null,
-  finances bigint not null default 0,
+  finances bigint not null default 1000000,
+  transfer_budget bigint not null default 250000,
+  wage_budget bigint not null default 350000,
   manager_id uuid,
   national_team_id uuid,
   unique (league_id, name)
@@ -78,7 +80,7 @@ create table if not exists seasons (
   id uuid primary key default gen_random_uuid(),
   label text not null unique,
   current_matchday integer not null default 1,
-  status text not null default 'active' check (status in ('active', 'completed')),
+  status text not null default 'active' check (status in ('active', 'processing', 'completed')),
   started_at timestamptz not null default now()
 );
 
@@ -128,7 +130,77 @@ begin
     where conname = 'seasons_status_check'
   ) then
     alter table seasons
-      add constraint seasons_status_check check (status in ('active', 'completed'));
+      add constraint seasons_status_check check (status in ('active', 'processing', 'completed'));
+  end if;
+end $$;
+
+with club_inputs as (
+  select
+    c.id,
+    c.reputation,
+    l.tier,
+    abs(hashtext(c.id::text)) as seed
+  from clubs c
+  join leagues l on l.id = c.league_id
+)
+update clubs c
+set
+  reputation = greatest(1, least(100, c.reputation)),
+  finances = greatest(
+    1000000,
+    case
+      when ci.reputation >= 80 then 150000000 + (ci.seed % 350000001)
+      when ci.reputation >= 70 then 40000000 + (ci.seed % 110000001)
+      when ci.reputation >= 60 then 10000000 + (ci.seed % 50000001)
+      else 1000000 + (ci.seed % 14000001)
+    end
+  ),
+  transfer_budget = greatest(
+    250000,
+    round(
+      (
+        case
+          when ci.reputation >= 80 then 150000000 + (ci.seed % 350000001)
+          when ci.reputation >= 70 then 40000000 + (ci.seed % 110000001)
+          when ci.reputation >= 60 then 10000000 + (ci.seed % 50000001)
+          else 1000000 + (ci.seed % 14000001)
+        end
+      ) * (0.22 + ((ci.seed % 19)::numeric / 100))
+    )
+  ),
+  wage_budget = greatest(
+    350000,
+    round(
+      (
+        case
+          when ci.reputation >= 80 then 150000000 + (ci.seed % 350000001)
+          when ci.reputation >= 70 then 40000000 + (ci.seed % 110000001)
+          when ci.reputation >= 60 then 10000000 + (ci.seed % 50000001)
+          else 1000000 + (ci.seed % 14000001)
+        end
+      ) * (0.30 + ((ci.seed % 26)::numeric / 100))
+    )
+  )
+from club_inputs ci
+where ci.id = c.id;
+
+alter table clubs
+  add column if not exists transfer_budget bigint not null default 250000,
+  add column if not exists wage_budget bigint not null default 350000;
+
+alter table clubs
+  alter column finances set default 1000000,
+  alter column transfer_budget set default 250000,
+  alter column wage_budget set default 350000;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'clubs_finances_positive_check'
+  ) then
+    alter table clubs
+      add constraint clubs_finances_positive_check check (finances > 0 and transfer_budget > 0 and wage_budget > 0);
   end if;
 end $$;
 

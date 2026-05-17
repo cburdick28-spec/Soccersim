@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getLeagues, type Club, type League } from "@/lib/players";
-import { supabase } from "@/lib/supabase/client";
+import { getSupabase } from "@/lib/supabase/client";
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -47,6 +47,7 @@ function getBoardObjective(reputation: number) {
 }
 
 export default function ClubSelectPage() {
+  const supabase = getSupabase();
   const router = useRouter();
   const [allLeagues, setAllLeagues] = useState<League[]>([]);
   const [selectedLeagueId, setSelectedLeagueId] = useState<string>("");

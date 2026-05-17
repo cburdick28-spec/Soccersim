@@ -1,6 +1,6 @@
 import { getSupabaseClient } from "@/lib/supabase";
 
-type SeasonStatus = "active" | "completed";
+type SeasonStatus = "active" | "processing" | "completed";
 type MatchStatus = "scheduled" | "in_progress" | "completed";
 
 export type SeasonRow = {
@@ -87,9 +87,14 @@ const DRAW_BREAK_FAVOR_STRONGER_PROBABILITY = 0.62;
 const BLOWOUT_REDUCTION_RATING_GAP_THRESHOLD = 12;
 const BLOWOUT_REDUCTION_GOAL_GAP_THRESHOLD = 2;
 const BLOWOUT_REDUCTION_PROBABILITY = 0.5;
+const MIN_FINANCES = 1_000_000;
+const MIN_TRANSFER_BUDGET = 250_000;
+const MIN_WAGE_BUDGET = 350_000;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const randomBetween = (min: number, max: number) => Math.random() * (max - min) + min;
+const deterministicHash = (value: string) =>
+  value.split("").reduce((acc, char, index) => (acc + char.charCodeAt(0) * (index + 1)) % 1_000_003, 0);
 
 const createSeasonLabel = (year = new Date().getUTCFullYear()) => `${year}/${year + 1}`;
 
@@ -111,7 +116,7 @@ export async function getActiveSeason(): Promise<SeasonRow | null> {
   const { data, error } = await supabase
     .from("seasons")
     .select("id, label, current_matchday, status")
-    .eq("status", "active")
+    .in("status", ["active", "processing"])
     .order("started_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -162,6 +167,130 @@ async function getOrCreateActiveSeason(): Promise<SeasonRow> {
     return active;
   }
   return createSeason();
+}
+
+const selectRangeValue = (seed: number, min: number, max: number) => {
+  if (min >= max) {
+    return min;
+  }
+  return min + (seed % (max - min + 1));
+};
+
+const getReputationBand = (index: number, total: number, leagueTier: number) => {
+  const eliteCount = leagueTier <= 1 ? Math.min(3, Math.max(1, Math.floor(total * 0.1))) : 1;
+  const highTierCount = Math.min(10, Math.max(5, Math.floor(total * 0.4)));
+  const topCount = Math.max(0, highTierCount - eliteCount);
+  const strongCount = Math.max(1, Math.floor(total * 0.25));
+  const midCount = Math.max(1, Math.floor(total * 0.2));
+  const eliteBoundary = eliteCount;
+  const topBoundary = eliteBoundary + topCount;
+  const strongBoundary = topBoundary + strongCount;
+  const midBoundary = strongBoundary + midCount;
+
+  if (index < eliteBoundary) {
+    return { min: 90, max: 100 };
+  }
+  if (index < topBoundary) {
+    return { min: 80, max: 89 };
+  }
+  if (index < strongBoundary) {
+    return { min: 70, max: 79 };
+  }
+  if (index < midBoundary) {
+    return { min: 60, max: 69 };
+  }
+  return { min: 50, max: 59 };
+};
+
+const getFinanceRange = (reputation: number) => {
+  if (reputation >= 80) {
+    return { min: 150_000_000, max: 500_000_000 };
+  }
+  if (reputation >= 70) {
+    return { min: 40_000_000, max: 150_000_000 };
+  }
+  if (reputation >= 60) {
+    return { min: 10_000_000, max: 60_000_000 };
+  }
+  return { min: 1_000_000, max: 15_000_000 };
+};
+
+async function repairClubEconomyAndReputation() {
+  const supabase = getSupabaseClient();
+  const [{ data: leagues, error: leaguesError }, { data: clubs, error: clubsError }] = await Promise.all([
+    supabase.from("leagues").select("id, tier, reputation"),
+    supabase.from("clubs").select("id, league_id, name, reputation"),
+  ]);
+
+  if (leaguesError || clubsError) {
+    throw new Error(`Failed to load clubs for economy repair: ${leaguesError?.message ?? clubsError?.message}`);
+  }
+
+  const leagueRows = (leagues ?? []) as Array<{ id: string; tier: number; reputation: number }>;
+  const leagueById = new Map(leagueRows.map((league) => [league.id, league]));
+  const clubsByLeague = new Map<string, Array<{ id: string; name: string; reputation: number }>>();
+
+  ((clubs ?? []) as Array<{ id: string; league_id: string; name: string; reputation: number }>).forEach((club) => {
+    const grouped = clubsByLeague.get(club.league_id) ?? [];
+    grouped.push(club);
+    clubsByLeague.set(club.league_id, grouped);
+  });
+
+  const updates: Array<{
+    id: string;
+    reputation: number;
+    finances: number;
+    transfer_budget: number;
+    wage_budget: number;
+  }> = [];
+
+  clubsByLeague.forEach((leagueClubs, leagueId) => {
+    const league = leagueById.get(leagueId);
+    if (!league) {
+      return;
+    }
+
+    const rankedClubs = [...leagueClubs].sort((a, b) => {
+      if (b.reputation !== a.reputation) {
+        return b.reputation - a.reputation;
+      }
+      return a.name.localeCompare(b.name);
+    });
+
+    rankedClubs.forEach((club, index) => {
+      const band = getReputationBand(index, rankedClubs.length, league.tier);
+      const reputationSeed = deterministicHash(`${leagueId}:${club.id}:rep`);
+      const reputation = clamp(selectRangeValue(reputationSeed, band.min, band.max), 1, 100);
+      const financeRange = getFinanceRange(reputation);
+      const financeSeed = deterministicHash(`${leagueId}:${club.id}:fin`);
+      const tierBoost = league.tier <= 1 ? 1.08 : league.tier === 2 ? 1.03 : 1;
+      const finances = Math.max(
+        MIN_FINANCES,
+        Math.round(selectRangeValue(financeSeed, financeRange.min, financeRange.max) * tierBoost),
+      );
+      const transferRatio = 0.22 + (deterministicHash(`${club.id}:transfer`) % 19) / 100;
+      const wageRatio = 0.3 + (deterministicHash(`${club.id}:wage`) % 26) / 100;
+      const transferBudget = Math.max(MIN_TRANSFER_BUDGET, Math.round(finances * transferRatio));
+      const wageBudget = Math.max(MIN_WAGE_BUDGET, Math.round(finances * wageRatio));
+
+      updates.push({
+        id: club.id,
+        reputation,
+        finances,
+        transfer_budget: transferBudget,
+        wage_budget: wageBudget,
+      });
+    });
+  });
+
+  if (updates.length === 0) {
+    return;
+  }
+
+  const { error } = await supabase.from("clubs").upsert(updates as never, { onConflict: "id" });
+  if (error) {
+    throw new Error(`Failed to repair club economy and reputation: ${error.message}`);
+  }
 }
 
 export async function seasonAlreadyInitialized(seasonId: string): Promise<boolean> {
@@ -462,6 +591,7 @@ export async function validateSeasonIntegrity(seasonId: string): Promise<{
 
 export async function initializeSeason(): Promise<SeasonRow> {
   const supabase = getSupabaseClient();
+  await repairClubEconomyAndReputation();
   const season = await getOrCreateActiveSeason();
   await ensureStandingsRows(season.id);
 
@@ -943,6 +1073,18 @@ export async function quickSimUserFixture(params: {
   return transitioned;
 }
 
+async function updateSeasonStatus(seasonId: string, fromStatus: SeasonStatus, toStatus: SeasonStatus) {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase
+    .from("seasons")
+    .update({ status: toStatus } as never)
+    .eq("id", seasonId)
+    .eq("status", fromStatus);
+  if (error) {
+    throw new Error(`Failed to update season status: ${error.message}`);
+  }
+}
+
 export async function runMatchday(
   seasonId: string,
   leagueId: string,
@@ -973,6 +1115,16 @@ export async function runMatchday(
       status: "finished",
     });
     return { progressed: false, requiresUserMatch: false, season, gameState, userFixtureId: null };
+  }
+  if (season.status === "processing") {
+    const gameState = setGameState({
+      seasonId,
+      leagueId,
+      currentMatchday: season.current_matchday,
+      userClubId,
+      status: "simulating",
+    });
+    return { progressed: false, requiresUserMatch: true, season, gameState, userFixtureId: null };
   }
 
   const currentStatus = getGameStateStatus(seasonId);
@@ -1013,12 +1165,34 @@ export async function runMatchday(
     }
   }
 
+  const { data: lockedSeasonRows, error: lockError } = await supabase
+    .from("seasons")
+    .update({ status: "processing" } as never)
+    .eq("id", seasonId)
+    .eq("status", "active")
+    .select("id, label, current_matchday, status")
+    .limit(1);
+  if (lockError) {
+    throw new Error(`Failed to acquire season lock: ${lockError.message}`);
+  }
+  const lockedSeason = ((lockedSeasonRows ?? [])[0] as SeasonRow | undefined) ?? null;
+  if (!lockedSeason) {
+    const gameState = setGameState({
+      seasonId,
+      leagueId,
+      currentMatchday: season.current_matchday,
+      userClubId,
+      status: "simulating",
+    });
+    return { progressed: false, requiresUserMatch: true, season, gameState, userFixtureId: null };
+  }
+
   matchdayLocks.add(seasonId);
   try {
     let gameState = setGameState({
       seasonId,
       leagueId,
-      currentMatchday: season.current_matchday,
+      currentMatchday: lockedSeason.current_matchday,
       userClubId,
       status: "simulating",
     });
@@ -1028,7 +1202,7 @@ export async function runMatchday(
       .select("id, home_club_id, away_club_id, league_id, status")
       .eq("season_id", seasonId)
       .eq("league_id", leagueId)
-      .eq("matchday", season.current_matchday)
+      .eq("matchday", lockedSeason.current_matchday)
       .eq("status", "scheduled");
     if (fixturesError) {
       throw new Error(`Failed to load matchday fixtures: ${fixturesError.message}`);
@@ -1042,8 +1216,7 @@ export async function runMatchday(
       status: MatchStatus;
     }>;
 
-    console.info(`[matchday start] season=${seasonId} league=${leagueId} matchday=${season.current_matchday}`);
-    console.info(`[matches loaded] count=${fixtureRows.length}`);
+    console.info(`[matchday start] season=${seasonId} league=${leagueId} matchday=${lockedSeason.current_matchday}`);
 
     const userMatch = fixtureRows.find(
       (fixture) => fixture.home_club_id === userClubId || fixture.away_club_id === userClubId,
@@ -1073,17 +1246,18 @@ export async function runMatchday(
 
     if (userMatch && userMatch.status !== "completed") {
       console.info(`[user match detected] fixture=${userMatch.id}`);
+      await updateSeasonStatus(seasonId, "processing", "active");
       gameState = setGameState({
         seasonId,
         leagueId,
-        currentMatchday: season.current_matchday,
+        currentMatchday: lockedSeason.current_matchday,
         userClubId,
         status: "in-match",
       });
       if (completedAiMatches > 0) {
         await updateLeagueStandings(leagueId, seasonId);
       }
-      return { progressed: false, requiresUserMatch: true, season, gameState, userFixtureId: userMatch.id };
+      return { progressed: false, requiresUserMatch: true, season: { ...lockedSeason, status: "active" }, gameState, userFixtureId: userMatch.id };
     }
 
     if (completedAiMatches > 0) {
@@ -1093,67 +1267,70 @@ export async function runMatchday(
     const { data: remaining, error: remainingError } = await supabase
       .from("matches")
       .select("id")
-      .eq("season_id", season.id)
+      .eq("season_id", lockedSeason.id)
       .eq("league_id", leagueId)
-      .eq("matchday", season.current_matchday)
+      .eq("matchday", lockedSeason.current_matchday)
       .eq("status", "scheduled")
       .limit(1);
     if (remainingError) {
       throw new Error(`Failed to check pending fixtures: ${remainingError.message}`);
     }
     if ((remaining ?? []).length > 0) {
+      await updateSeasonStatus(seasonId, "processing", "active");
       gameState = setGameState({
         seasonId,
         leagueId,
-        currentMatchday: season.current_matchday,
+        currentMatchday: lockedSeason.current_matchday,
         userClubId,
         status: "in-match",
       });
-      return { progressed: false, requiresUserMatch: true, season, gameState, userFixtureId: null };
+      return { progressed: false, requiresUserMatch: true, season: { ...lockedSeason, status: "active" }, gameState, userFixtureId: null };
     }
 
     const { data: maxMatchdayRows, error: maxMatchdayError } = await supabase
       .from("matches")
       .select("matchday")
-      .eq("season_id", season.id)
+      .eq("season_id", lockedSeason.id)
       .eq("league_id", leagueId)
       .order("matchday", { ascending: false })
       .limit(1);
     if (maxMatchdayError) {
       throw new Error(`Failed to determine season length: ${maxMatchdayError.message}`);
     }
-    const maxMatchday = ((maxMatchdayRows ?? [])[0] as { matchday: number } | undefined)?.matchday ?? season.current_matchday;
+    const maxMatchday = ((maxMatchdayRows ?? [])[0] as { matchday: number } | undefined)?.matchday ?? lockedSeason.current_matchday;
 
-    if (season.current_matchday >= maxMatchday) {
+    if (lockedSeason.current_matchday >= maxMatchday) {
       const { error } = await supabase
         .from("seasons")
         .update({ status: "completed" } as never)
-        .eq("id", season.id);
+        .eq("id", lockedSeason.id)
+        .eq("status", "processing");
       if (error) {
         throw new Error(`Failed to complete season: ${error.message}`);
       }
-      const finishedSeason = { ...season, status: "completed" as const };
+      const finishedSeason = { ...lockedSeason, status: "completed" as const };
       gameState = setGameState({
         seasonId,
         leagueId,
-        currentMatchday: season.current_matchday,
+        currentMatchday: lockedSeason.current_matchday,
         userClubId,
         status: "finished",
       });
-      console.info(`[matchday complete] season=${seasonId} matchday=${season.current_matchday}`);
+      console.info(`[matchday end] season=${seasonId} matchday=${lockedSeason.current_matchday}`);
       return { progressed: true, requiresUserMatch: false, season: finishedSeason, gameState, userFixtureId: null };
     }
 
-    const nextMatchday = season.current_matchday + 1;
+    const nextMatchday = lockedSeason.current_matchday + 1;
     const { error: updateError } = await supabase
       .from("seasons")
-      .update({ current_matchday: nextMatchday } as never)
-      .eq("id", season.id);
+      .update({ current_matchday: nextMatchday, status: "active" } as never)
+      .eq("id", lockedSeason.id)
+      .eq("status", "processing");
     if (updateError) {
       throw new Error(`Failed to advance matchday: ${updateError.message}`);
     }
 
-    const progressedSeason = { ...season, current_matchday: nextMatchday };
+    const progressedSeason = { ...lockedSeason, current_matchday: nextMatchday, status: "active" as const };
     gameState = setGameState({
       seasonId,
       leagueId,
@@ -1161,7 +1338,7 @@ export async function runMatchday(
       userClubId,
       status: "idle",
     });
-    console.info(`[matchday complete] season=${seasonId} matchday=${season.current_matchday}`);
+    console.info(`[matchday end] season=${seasonId} matchday=${lockedSeason.current_matchday}`);
     return { progressed: true, requiresUserMatch: false, season: progressedSeason, gameState, userFixtureId: null };
   } finally {
     if (getGameStateStatus(seasonId) === "simulating") {
@@ -1172,6 +1349,15 @@ export async function runMatchday(
         userClubId,
         status: "idle",
       });
+    }
+    const { data: processingSeason } = await supabase
+      .from("seasons")
+      .select("id")
+      .eq("id", seasonId)
+      .eq("status", "processing")
+      .limit(1);
+    if ((processingSeason ?? []).length > 0) {
+      await updateSeasonStatus(seasonId, "processing", "active");
     }
     matchdayLocks.delete(seasonId);
   }

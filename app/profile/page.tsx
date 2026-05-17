@@ -4,10 +4,11 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { isGlobalAdmin, usernameToEmail } from "@/lib/auth/username";
 import { t } from "@/lib/i18n/translations";
-import { isSupabaseConfigured, supabase } from "@/lib/supabase/client";
+import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { useAppStore } from "@/stores/useAppStore";
 
 export default function ProfilePage() {
+  const supabase = getSupabase();
   const language = useAppStore((state) => state.language);
   const profile = useAppStore((state) => state.profile);
   const setProfile = useAppStore((state) => state.setProfile);

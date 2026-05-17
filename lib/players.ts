@@ -15,6 +15,8 @@ export type Club = {
   name: string;
   reputation: number;
   finances: number;
+  transfer_budget: number;
+  wage_budget: number;
 };
 
 type RawPlayerRow = {
@@ -125,7 +127,7 @@ export async function getClubById(clubId: string): Promise<Club | null> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from("clubs")
-    .select("id, league_id, name, reputation, finances")
+    .select("id, league_id, name, reputation, finances, transfer_budget, wage_budget")
     .eq("id", clubId)
     .maybeSingle();
 
