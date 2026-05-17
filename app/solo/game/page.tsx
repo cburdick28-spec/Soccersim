@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getReputationProfile } from "@/lib/clubRealism";
 import {
   advanceMatchday,
   getActiveSeason,
@@ -24,6 +25,46 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
     selectedClubId
       ? await getPlayersByClub(selectedClubId)
       : [];
+  const squadAverageAge =
+    selectedClubPlayers.length > 0
+      ? Number((selectedClubPlayers.reduce((sum, player) => sum + player.age, 0) / selectedClubPlayers.length).toFixed(1))
+      : null;
+  const squadAverageOverall =
+    selectedClubPlayers.length > 0
+      ? Math.round(selectedClubPlayers.reduce((sum, player) => sum + player.overall, 0) / selectedClubPlayers.length)
+      : null;
+  const strongestPlayer =
+    selectedClubPlayers.length > 0
+      ? selectedClubPlayers.reduce((best, player) => (player.overall > best.overall ? player : best), selectedClubPlayers[0])
+      : null;
+  const lineRatings =
+    selectedClubPlayers.length > 0
+      ? selectedClubPlayers.reduce(
+          (acc, player) => {
+            acc.attack += Math.round((player.shooting + player.dribbling + player.pace) / 3);
+            acc.midfield += Math.round((player.passing + player.dribbling + player.physical) / 3);
+            acc.defense += Math.round((player.defending + player.physical + player.pace) / 3);
+            return acc;
+          },
+          { attack: 0, midfield: 0, defense: 0 },
+        )
+      : null;
+  const attackRating = lineRatings ? Math.round(lineRatings.attack / selectedClubPlayers.length) : null;
+  const midfieldRating = lineRatings ? Math.round(lineRatings.midfield / selectedClubPlayers.length) : null;
+  const defenseRating = lineRatings ? Math.round(lineRatings.defense / selectedClubPlayers.length) : null;
+  const weakestArea =
+    attackRating === null || midfieldRating === null || defenseRating === null
+      ? null
+      : attackRating <= midfieldRating && attackRating <= defenseRating
+        ? "Attack"
+        : midfieldRating <= attackRating && midfieldRating <= defenseRating
+          ? "Midfield"
+          : "Defense";
+  const depthQuality =
+    selectedClubPlayers.length > 0
+      ? Math.round((selectedClubPlayers.filter((player) => player.overall >= 70).length / selectedClubPlayers.length) * 100)
+      : null;
+  const reputationProfile = selectedClub ? getReputationProfile(selectedClub.reputation) : null;
   const clubsInLeague = selectedLeagueId ? await getClubsByLeague(selectedLeagueId) : [];
   const clubNameById = new Map(clubsInLeague.map((club) => [club.id, club.name]));
 
@@ -88,10 +129,51 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
         )}
       </section>
 
+      {selectedClub && (
+        <section className="panel p-6">
+          <h2 className="text-lg font-semibold">Board Briefing</h2>
+          <p className="mt-2 text-sm text-slate-200">
+            Welcome to {selectedClub.name}. The board expects you to{" "}
+            {(selectedClub.board_expectation ?? "deliver a competitive season").toLowerCase()}.
+          </p>
+          <div className="mt-3 grid gap-2 text-xs text-slate-300 sm:grid-cols-2 lg:grid-cols-3">
+            <p>
+              Reputation: <strong>{selectedClub.reputation}</strong> ({reputationProfile?.label ?? "Club profile"})
+            </p>
+            <p>
+              Finances: <strong>${Number(selectedClub.finances).toLocaleString()}</strong>
+            </p>
+            <p>
+              Transfer budget: <strong>${Number(selectedClub.transfer_budget ?? 0).toLocaleString()}</strong>
+            </p>
+            <p>
+              Wage budget: <strong>${Number(selectedClub.wage_budget ?? 0).toLocaleString()}</strong>
+            </p>
+            <p>
+              Season target: <strong>{selectedClub.season_expectation ?? "Stay competitive"}</strong>
+            </p>
+            <p>
+              Tactical recommendation: <strong>{selectedClub.tactical_style ?? "Balanced possession"}</strong>
+            </p>
+          </div>
+        </section>
+      )}
+
       {selectedClubPlayers.length > 0 && (
         <section className="panel p-6">
           <h2 className="text-lg font-semibold">Squad Preview</h2>
           <p className="mt-1 text-xs text-slate-400">{selectedClubPlayers.length} players loaded</p>
+          <p className="mt-2 text-xs text-slate-300">
+            Avg age <strong>{squadAverageAge ?? "N/A"}</strong> • Avg OVR{" "}
+            <strong>{squadAverageOverall ?? "N/A"}</strong> • ATT <strong>{attackRating ?? "N/A"}</strong> • MID{" "}
+            <strong>{midfieldRating ?? "N/A"}</strong> • DEF <strong>{defenseRating ?? "N/A"}</strong> • Depth{" "}
+            <strong>{depthQuality ?? "N/A"}%</strong> • Weakest area <strong>{weakestArea ?? "N/A"}</strong>
+          </p>
+          {strongestPlayer && (
+            <p className="mt-1 text-xs text-slate-300">
+              Strongest player: <strong>{strongestPlayer.name}</strong> ({strongestPlayer.overall} OVR)
+            </p>
+          )}
           <ul className="mt-4 grid gap-2 text-sm text-slate-300 sm:grid-cols-2 lg:grid-cols-3">
             {selectedClubPlayers.slice(0, 18).map((player) => (
               <li key={player.id} className="rounded-md border border-slate-800 px-3 py-2">

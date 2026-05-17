@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getLeagues, type Club, type League } from "@/lib/players";
+import { getReputationProfile, validateLeagueCountry } from "@/lib/clubRealism";
 import { supabase } from "@/lib/supabase/client";
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
@@ -11,16 +12,22 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
   currency: "USD",
   maximumFractionDigits: 0,
 });
-const MAX_REPUTATION_STARS = 5;
-const REPUTATION_PER_STAR = 20;
 const DEFAULT_CLUB_BADGE = "FC";
 const CARD_HOVER_GLOW_CLASS =
   "hover:-translate-y-0.5 hover:shadow-[0_0_0_1px_rgba(56,189,248,0.3),0_12px_24px_rgba(15,23,42,0.45)]";
 
-function getReputationStars(reputation: number) {
-  const filled = Math.max(0, Math.min(MAX_REPUTATION_STARS, Math.round(reputation / REPUTATION_PER_STAR)));
-  return `${"★".repeat(filled)}${"☆".repeat(MAX_REPUTATION_STARS - filled)}`;
-}
+type SquadPlayer = {
+  id: string;
+  name: string;
+  age: number;
+  preferred_position: string;
+  pace: number;
+  shooting: number;
+  passing: number;
+  dribbling: number;
+  defending: number;
+  physical: number;
+};
 
 function getClubBadgeLabel(clubName: string) {
   const words = clubName
@@ -36,14 +43,27 @@ function getClubBadgeLabel(clubName: string) {
   return initials || DEFAULT_CLUB_BADGE;
 }
 
-function getBoardObjective(reputation: number) {
-  if (reputation >= 80) {
-    return "Compete for the title and qualify for continental football.";
+function getLeagueThemeClass(leagueName: string) {
+  const key = leagueName.toLowerCase();
+  if (key.includes("premier")) {
+    return "from-violet-500/15 to-indigo-500/5 border-violet-400/40";
   }
-  if (reputation >= 65) {
-    return "Push for a top-half finish and challenge for continental spots.";
+  if (key.includes("bundesliga")) {
+    return "from-rose-500/15 to-red-500/5 border-rose-400/40";
   }
-  return "Stabilize the club, avoid relegation risk, and build squad value.";
+  if (key.includes("liga")) {
+    return "from-amber-500/15 to-yellow-500/5 border-amber-400/40";
+  }
+  if (key.includes("serie")) {
+    return "from-sky-500/15 to-cyan-500/5 border-sky-400/40";
+  }
+  return "from-emerald-500/15 to-teal-500/5 border-emerald-400/40";
+}
+
+function toOverall(player: SquadPlayer) {
+  return Math.round(
+    (player.pace + player.shooting + player.passing + player.dribbling + player.defending + player.physical) / 6,
+  );
 }
 
 export default function ClubSelectPage() {
@@ -52,7 +72,9 @@ export default function ClubSelectPage() {
   const [selectedLeagueId, setSelectedLeagueId] = useState<string>("");
   const [selectedClubId, setSelectedClubId] = useState<string>("");
   const [clubsInSelectedLeague, setClubsInSelectedLeague] = useState<Club[]>([]);
+  const [selectedClubSquad, setSelectedClubSquad] = useState<SquadPlayer[]>([]);
   const latestClubRequestId = useRef(0);
+  const latestSquadRequestId = useRef(0);
   const selectedLeague = useMemo(
     () => allLeagues.find((league) => league.id === selectedLeagueId) ?? null,
     [allLeagues, selectedLeagueId],
@@ -71,6 +93,75 @@ export default function ClubSelectPage() {
     () => clubsInSelectedLeague.reduce((total, club) => total + club.finances, 0),
     [clubsInSelectedLeague],
   );
+  const selectedClub = useMemo(
+    () => clubsInSelectedLeague.find((club) => club.id === selectedClubId) ?? null,
+    [clubsInSelectedLeague, selectedClubId],
+  );
+  const selectedReputationProfile = useMemo(
+    () => getReputationProfile(selectedClub?.reputation ?? 1),
+    [selectedClub?.reputation],
+  );
+  const expectedFinish = useMemo(() => {
+    if (!selectedClub) {
+      return "N/A";
+    }
+    const ranked = [...clubsInSelectedLeague].sort((a, b) => b.reputation - a.reputation);
+    const position = ranked.findIndex((club) => club.id === selectedClub.id) + 1;
+    return position > 0 ? `${position}/${clubsInSelectedLeague.length}` : "N/A";
+  }, [clubsInSelectedLeague, selectedClub]);
+  const squadOverview = useMemo(() => {
+    if (selectedClubSquad.length === 0) {
+      return null;
+    }
+
+    const totals = selectedClubSquad.reduce(
+      (acc, player) => {
+        const overall = toOverall(player);
+        acc.age += player.age;
+        acc.overall += overall;
+        acc.attack += Math.round((player.shooting + player.dribbling + player.pace) / 3);
+        acc.midfield += Math.round((player.passing + player.dribbling + player.physical) / 3);
+        acc.defense += Math.round((player.defending + player.physical + player.pace) / 3);
+        if (!acc.strongest || overall > acc.strongest.overall) {
+          acc.strongest = { name: player.name, overall };
+        }
+        return acc;
+      },
+      {
+        age: 0,
+        overall: 0,
+        attack: 0,
+        midfield: 0,
+        defense: 0,
+        strongest: null as null | { name: string; overall: number },
+      },
+    );
+
+    const count = selectedClubSquad.length;
+    const avgAge = Number((totals.age / count).toFixed(1));
+    const avgOverall = Math.round(totals.overall / count);
+    const attackRating = Math.round(totals.attack / count);
+    const midfieldRating = Math.round(totals.midfield / count);
+    const defenseRating = Math.round(totals.defense / count);
+    const depthQuality = Math.round((selectedClubSquad.filter((player) => toOverall(player) >= 70).length / count) * 100);
+    const weakestArea =
+      attackRating <= midfieldRating && attackRating <= defenseRating
+        ? "Attack"
+        : midfieldRating <= attackRating && midfieldRating <= defenseRating
+          ? "Midfield"
+          : "Defense";
+
+    return {
+      avgAge,
+      avgOverall,
+      attackRating,
+      midfieldRating,
+      defenseRating,
+      depthQuality,
+      strongestPlayer: totals.strongest?.name ?? "N/A",
+      weakestArea,
+    };
+  }, [selectedClubSquad]);
 
   useEffect(() => {
     let isMounted = true;
@@ -111,7 +202,9 @@ export default function ClubSelectPage() {
       try {
         const { data, error } = await supabase
           .from("clubs")
-          .select("*")
+          .select(
+            "id, league_id, name, country, reputation, finances, transfer_budget, wage_budget, board_confidence, season_expectation, board_expectation, fan_expectation, stadium_name, club_colors, founded_year, tactical_style, rival_club_id",
+          )
           .eq("league_id", selectedLeagueId)
           .order("name");
 
@@ -139,6 +232,49 @@ export default function ClubSelectPage() {
       isMounted = false;
     };
   }, [selectedLeagueId]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const requestId = latestSquadRequestId.current + 1;
+    latestSquadRequestId.current = requestId;
+
+    async function loadSelectedClubSquad() {
+      if (!selectedClubId) {
+        setSelectedClubSquad([]);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from("players")
+          .select("id, name, age, preferred_position, pace, shooting, passing, dribbling, defending, physical")
+          .eq("club_id", selectedClubId)
+          .limit(80);
+
+        if (!isMounted || requestId !== latestSquadRequestId.current) {
+          return;
+        }
+
+        if (error) {
+          setSelectedClubSquad([]);
+          return;
+        }
+
+        setSelectedClubSquad((data ?? []) as SquadPlayer[]);
+      } catch {
+        if (!isMounted || requestId !== latestSquadRequestId.current) {
+          return;
+        }
+        setSelectedClubSquad([]);
+      }
+    }
+
+    void loadSelectedClubSquad();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedClubId]);
 
   const handleStartCareer = () => {
     if (selectedClubId && selectedLeagueId) {
@@ -179,8 +315,15 @@ export default function ClubSelectPage() {
       </section>
 
       {selectedLeagueId && (
-        <section className="panel p-6">
+        <section
+          className={`panel border bg-gradient-to-br p-6 ${getLeagueThemeClass(selectedLeague?.name ?? "league")}`}
+        >
           <h2 className="text-lg font-semibold">Clubs in {selectedLeague?.name ?? "Selected league"}</h2>
+          {selectedLeague && (
+            <p className="mt-1 text-xs text-slate-300">
+              League country: <strong>{selectedLeague.country ?? "Unknown"}</strong>
+            </p>
+          )}
           <div className="mt-3 rounded-lg border border-slate-800/80 bg-slate-950/40 p-3 text-xs text-slate-300">
             <p>
               <strong>{clubsInSelectedLeague.length}</strong> clubs available in this league.
@@ -210,7 +353,7 @@ export default function ClubSelectPage() {
                     <div>
                       <span className="font-medium">{club.name}</span>
                       <p className="mt-1 text-xs text-slate-400">
-                        {getReputationStars(club.reputation)} Reputation
+                        {getReputationProfile(club.reputation).stars} • Rep {club.reputation}
                       </p>
                     </div>
                   </div>
@@ -224,12 +367,96 @@ export default function ClubSelectPage() {
                   Finances: <strong>{currencyFormatter.format(club.finances)}</strong>
                 </p>
                 <p className="mt-1 text-xs text-slate-400">
-                  Board objective:{" "}
-                  <strong className="text-slate-200">{getBoardObjective(club.reputation)}</strong>
+                  Transfer: <strong className="text-slate-200">{currencyFormatter.format(club.transfer_budget ?? 0)}</strong>{" "}
+                  • Wage: <strong className="text-slate-200">{currencyFormatter.format(club.wage_budget ?? 0)}</strong>
                 </p>
               </button>
             ))}
           </div>
+        </section>
+      )}
+
+      {selectedClub && (
+        <section className="panel p-6">
+          <h2 className="text-lg font-semibold">Club Overview</h2>
+          <p className="mt-1 text-sm text-slate-300">
+            {selectedClub.name} • {selectedReputationProfile.label}
+          </p>
+          <div className="mt-4 grid gap-3 text-xs text-slate-200 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="rounded-md border border-slate-800 bg-slate-950/40 p-3">
+              <p className="text-slate-400">Reputation</p>
+              <p className="mt-1 font-semibold">
+                {selectedClub.reputation} ({selectedReputationProfile.stars})
+              </p>
+              <p className="mt-1 text-slate-400">{selectedReputationProfile.mediaExpectation}</p>
+            </div>
+            <div className="rounded-md border border-slate-800 bg-slate-950/40 p-3">
+              <p className="text-slate-400">Financials</p>
+              <p className="mt-1 font-semibold">{currencyFormatter.format(selectedClub.finances)}</p>
+              <p className="mt-1 text-slate-400">
+                Transfer {currencyFormatter.format(selectedClub.transfer_budget ?? 0)} • Wage{" "}
+                {currencyFormatter.format(selectedClub.wage_budget ?? 0)}
+              </p>
+            </div>
+            <div className="rounded-md border border-slate-800 bg-slate-950/40 p-3">
+              <p className="text-slate-400">Expectations</p>
+              <p className="mt-1 font-semibold">{selectedClub.season_expectation ?? "Compete hard each week"}</p>
+              <p className="mt-1 text-slate-400">Expected finish: {expectedFinish}</p>
+            </div>
+            <div className="rounded-md border border-slate-800 bg-slate-950/40 p-3">
+              <p className="text-slate-400">Stadium</p>
+              <p className="mt-1 font-semibold">{selectedClub.stadium_name ?? `${selectedClub.name} Stadium`}</p>
+              <p className="mt-1 text-slate-400">
+                Founded: {selectedClub.founded_year ?? "Unknown"} • Fans:{" "}
+                {selectedClub.fan_expectation ?? "Demand commitment and growth"}
+              </p>
+            </div>
+            <div className="rounded-md border border-slate-800 bg-slate-950/40 p-3">
+              <p className="text-slate-400">Squad Quality</p>
+              <p className="mt-1 font-semibold">
+                Avg OVR {squadOverview?.avgOverall ?? "N/A"} • Avg age {squadOverview?.avgAge ?? "N/A"}
+              </p>
+              <p className="mt-1 text-slate-400">
+                ATT {squadOverview?.attackRating ?? "N/A"} • MID {squadOverview?.midfieldRating ?? "N/A"} • DEF{" "}
+                {squadOverview?.defenseRating ?? "N/A"}
+              </p>
+            </div>
+            <div className="rounded-md border border-slate-800 bg-slate-950/40 p-3">
+              <p className="text-slate-400">Scouting Snapshot</p>
+              <p className="mt-1 font-semibold">
+                Strongest: {squadOverview?.strongestPlayer ?? "N/A"} • Weakest: {squadOverview?.weakestArea ?? "N/A"}
+              </p>
+              <p className="mt-1 text-slate-400">
+                Depth quality: {squadOverview?.depthQuality ?? 0}% • Style:{" "}
+                {selectedClub.tactical_style ?? "Balanced possession"}
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {selectedClub && selectedLeague && (
+        <section className="panel p-6">
+          <h2 className="text-lg font-semibold">Board Introduction</h2>
+          <p className="mt-2 text-sm text-slate-200">
+            Welcome to {selectedClub.name}. The board expects you to{" "}
+            {(selectedClub.board_expectation ?? "deliver a competitive season").toLowerCase()}.
+          </p>
+          <p className="mt-2 text-xs text-slate-400">
+            Board confidence: {selectedClub.board_confidence ?? 50}/100 • Financial status:{" "}
+            {currencyFormatter.format(selectedClub.finances)} • Tactical recommendation:{" "}
+            {selectedClub.tactical_style ?? "Balanced possession"}
+          </p>
+          <p className="mt-1 text-xs text-slate-400">
+            League validation:{" "}
+            {validateLeagueCountry(
+              selectedLeague.name,
+              selectedLeague.country ?? "",
+              selectedClub.country ?? selectedLeague.country ?? null,
+            )
+              ? "Domestic assignment verified"
+              : "Assignment mismatch detected"}
+          </p>
         </section>
       )}
 

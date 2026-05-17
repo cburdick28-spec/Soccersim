@@ -13,8 +13,20 @@ export type Club = {
   id: string;
   league_id: string;
   name: string;
+  country?: string | null;
   reputation: number;
   finances: number;
+  transfer_budget?: number;
+  wage_budget?: number;
+  board_confidence?: number;
+  season_expectation?: string;
+  board_expectation?: string;
+  fan_expectation?: string;
+  stadium_name?: string | null;
+  club_colors?: { primary?: string; secondary?: string } | null;
+  founded_year?: number | null;
+  tactical_style?: string | null;
+  rival_club_id?: string | null;
 };
 
 type RawPlayerRow = {
@@ -81,7 +93,7 @@ export async function getLeagues(): Promise<League[]> {
   const supabase = getSupabaseClient();
   const { data: leagues, error } = await supabase
     .from("leagues")
-    .select("id, name")
+    .select("id, name, country, reputation, tier")
     .order("name");
 
   if (error) {
@@ -125,7 +137,9 @@ export async function getClubById(clubId: string): Promise<Club | null> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from("clubs")
-    .select("id, league_id, name, reputation, finances")
+    .select(
+      "id, league_id, name, country, reputation, finances, transfer_budget, wage_budget, board_confidence, season_expectation, board_expectation, fan_expectation, stadium_name, club_colors, founded_year, tactical_style, rival_club_id",
+    )
     .eq("id", clubId)
     .maybeSingle();
 
