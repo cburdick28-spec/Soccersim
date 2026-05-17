@@ -8,10 +8,6 @@ const fallbackAnon =
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? fallbackUrl;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? fallbackAnon;
 
-if (process.env.NODE_ENV !== "production") {
-  console.log("SUPABASE URL", supabaseUrl);
-}
-
 export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey);
 
 export const isSupabaseConfigured =

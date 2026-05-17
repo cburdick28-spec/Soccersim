@@ -70,7 +70,23 @@ type StandingAccumulator = {
   points: number;
 };
 
+export type GameLoopStatus = "idle" | "simulating" | "in-match" | "finished";
+
+export type GameState = {
+  seasonId: string;
+  leagueId: string;
+  currentMatchday: number;
+  userClubId: string;
+  status: GameLoopStatus;
+};
+
 const FIXTURE_BATCH_SIZE = 400;
+const GOAL_VARIANCE = 0.55;
+const DRAW_BREAK_RATING_GAP_THRESHOLD = 7;
+const DRAW_BREAK_FAVOR_STRONGER_PROBABILITY = 0.62;
+const BLOWOUT_REDUCTION_RATING_GAP_THRESHOLD = 12;
+const BLOWOUT_REDUCTION_GOAL_GAP_THRESHOLD = 2;
+const BLOWOUT_REDUCTION_PROBABILITY = 0.5;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const randomBetween = (min: number, max: number) => Math.random() * (max - min) + min;
@@ -79,6 +95,16 @@ const createSeasonLabel = (year = new Date().getUTCFullYear()) => `${year}/${yea
 
 const average = (values: number[]) =>
   values.length === 0 ? 0 : values.reduce((total, value) => total + value, 0) / values.length;
+
+const gameStateBySeasonId = new Map<string, GameState>();
+const matchdayLocks = new Set<string>();
+
+const setGameState = (state: GameState) => {
+  gameStateBySeasonId.set(state.seasonId, state);
+  return state;
+};
+
+const getGameStateStatus = (seasonId: string): GameLoopStatus => gameStateBySeasonId.get(seasonId)?.status ?? "idle";
 
 export async function getActiveSeason(): Promise<SeasonRow | null> {
   const supabase = getSupabaseClient();
@@ -568,98 +594,70 @@ type ClubSimulationContext = {
 };
 
 const clubRating = (context: ClubSimulationContext) => {
-  const squadBase = average(
+  const avgPlayerRating = average(
     context.players.map((player) =>
       (player.pace + player.shooting + player.passing + player.dribbling + player.defending + player.physical) / 6,
     ),
   );
-  const formModifier = average(context.players.map((player) => (player.form - 50) * 0.12));
-  const moraleModifier = average(context.players.map((player) => (player.morale - 70) * 0.09));
-  const fatiguePenalty = average(context.players.map((player) => (100 - player.fitness) * 0.11));
-
-  const tacticalModifier = context.tactic
-    ? context.tactic.style === "pressing"
-      ? context.tactic.pressing * 0.02
-      : context.tactic.style === "counter"
-        ? 1.8
-        : context.tactic.style === "possession"
-          ? 1.2
-          : 0.6
-    : 0;
-
-  return context.club.reputation * 0.22 + squadBase * 0.65 + formModifier + moraleModifier + tacticalModifier - fatiguePenalty;
+  const form = average(context.players.map((player) => player.form));
+  return avgPlayerRating * 0.6 + context.club.reputation * 0.3 + form * 0.1;
 };
 
 function simulateFixture(contextHome: ClubSimulationContext, contextAway: ClubSimulationContext) {
   const homeRating = clubRating(contextHome);
   const awayRating = clubRating(contextAway);
-  const strengthGap = (homeRating - awayRating) / 100;
+  const strengthGap = homeRating - awayRating;
 
-  const baseTotalGoals = clamp(2.2 + randomBetween(-0.25, 0.25), 1.7, 2.5);
-  const homeGoalBias = clamp(0.52 + strengthGap * 0.28 + 0.06, 0.34, 0.76);
+  const homeExpectedGoals = clamp(1.22 + strengthGap * 0.018 + randomBetween(-0.22, 0.22), 0.2, 2.9);
+  const awayExpectedGoals = clamp(1.02 - strengthGap * 0.016 + randomBetween(-0.22, 0.22), 0.2, 2.7);
 
-  const attackingActions = clamp(Math.round(20 + randomBetween(-4, 5)), 12, 26);
-  let homeGoals = 0;
-  let awayGoals = 0;
-  let homeXg = 0;
-  let awayXg = 0;
-  const commentary: string[] = [];
+  let homeGoals = clamp(Math.round(homeExpectedGoals + randomBetween(-GOAL_VARIANCE, GOAL_VARIANCE)), 0, 4);
+  let awayGoals = clamp(Math.round(awayExpectedGoals + randomBetween(-GOAL_VARIANCE, GOAL_VARIANCE)), 0, 4);
 
-  for (let action = 0; action < attackingActions; action += 1) {
-    const homeAttack = Math.random() < homeGoalBias;
-    const attacker = homeAttack ? contextHome : contextAway;
-    const defender = homeAttack ? contextAway : contextHome;
-    const attackRating = clubRating(attacker);
-    const defenseRating = clubRating(defender);
-
-    const shotProbability = clamp(0.34 + (attackRating - defenseRating) / 360 + randomBetween(-0.05, 0.05), 0.16, 0.52);
-    if (Math.random() > shotProbability) {
-      continue;
-    }
-
-    const bigChanceProbability = clamp(0.13 + (attackRating - defenseRating) / 500, 0.04, 0.22);
-    const defensiveErrorProbability = clamp(0.04 + (defenseRating - attackRating) / -650, 0.02, 0.12);
-    const isBigChance = Math.random() < bigChanceProbability;
-    const isError = Math.random() < defensiveErrorProbability;
-    const shotXg = isBigChance ? randomBetween(0.22, 0.48) : randomBetween(0.04, 0.16);
-    const conversionProbability = clamp(shotXg + (isError ? 0.18 : 0) + randomBetween(-0.05, 0.03), 0.04, 0.62);
-
-    if (homeAttack) {
-      homeXg += shotXg;
-    } else {
-      awayXg += shotXg;
-    }
-
-    if (Math.random() < conversionProbability) {
-      if (homeAttack) {
-        homeGoals += 1;
-      } else {
-        awayGoals += 1;
-      }
-      if (commentary.length < 8) {
-        commentary.push(isError ? "Defensive error leads to a goal." : "Clinical finish from open play.");
-      }
+  const strongerSide = strengthGap >= 0 ? "home" : "away";
+  const weakerSide = strongerSide === "home" ? "away" : "home";
+  const goalGap = Math.abs(homeGoals - awayGoals);
+  const ratingGap = Math.abs(strengthGap);
+  if (ratingGap > DRAW_BREAK_RATING_GAP_THRESHOLD && goalGap === 0 && Math.random() < DRAW_BREAK_FAVOR_STRONGER_PROBABILITY) {
+    if (strongerSide === "home" && homeGoals < 4) {
+      homeGoals += 1;
+    } else if (strongerSide === "away" && awayGoals < 4) {
+      awayGoals += 1;
     }
   }
-
-  const expectedTotal = homeXg + awayXg;
-  if (expectedTotal > baseTotalGoals * 1.55 && Math.random() < 0.55) {
-    if (homeGoals > awayGoals && homeGoals > 0) {
+  if (
+    ratingGap > BLOWOUT_REDUCTION_RATING_GAP_THRESHOLD &&
+    goalGap > BLOWOUT_REDUCTION_GOAL_GAP_THRESHOLD &&
+    Math.random() < BLOWOUT_REDUCTION_PROBABILITY
+  ) {
+    if (weakerSide === "home" && homeGoals > 0) {
       homeGoals -= 1;
-    } else if (awayGoals > 0) {
+    }
+    if (weakerSide === "away" && awayGoals > 0) {
       awayGoals -= 1;
     }
   }
 
+  const homeXg = clamp(homeExpectedGoals + randomBetween(-0.18, 0.18), 0.1, 3.5);
+  const awayXg = clamp(awayExpectedGoals + randomBetween(-0.18, 0.18), 0.1, 3.3);
+  const commentary: string[] = [];
+  if (homeGoals > awayGoals) {
+    commentary.push("Home side converts key chances and controls decisive moments.");
+  } else if (awayGoals > homeGoals) {
+    commentary.push("Away side executes efficiently and edges the key phases.");
+  } else {
+    commentary.push("Balanced match with limited separating moments.");
+  }
+
   const possessionHome = clamp(
-    Math.round(50 + (homeRating - awayRating) * 0.16 + randomBetween(-6, 6)),
-    35,
-    65,
+    Math.round(50 + strengthGap * 0.2 + randomBetween(-5, 5)),
+    34,
+    66,
   );
 
   return {
-    homeGoals: clamp(homeGoals, 0, 6),
-    awayGoals: clamp(awayGoals, 0, 6),
+    homeGoals,
+    awayGoals,
     possessionHome,
     xgHome: Number(homeXg.toFixed(2)),
     xgAway: Number(awayXg.toFixed(2)),
@@ -736,11 +734,11 @@ async function buildClubSimulationContext(fixtures: Array<{ home_club_id: string
 async function completeFixture(params: {
   fixtureId: string;
   result: { homeGoals: number; awayGoals: number; xgHome: number; xgAway: number; possessionHome: number; commentary: string[] };
-}) {
+}): Promise<boolean> {
   const supabase = getSupabaseClient();
   const { fixtureId, result } = params;
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("matches")
     .update({
       home_goals: result.homeGoals,
@@ -753,11 +751,14 @@ async function completeFixture(params: {
       played_at: new Date().toISOString(),
     } as never)
     .eq("id", fixtureId)
-    .eq("status", "scheduled");
+    .eq("status", "scheduled")
+    .select("id");
 
   if (error) {
     throw new Error(`Failed to complete fixture ${fixtureId}: ${error.message}`);
   }
+
+  return (data ?? []).length > 0;
 }
 
 export async function simulateOtherLeagueMatches(
@@ -789,6 +790,7 @@ export async function simulateOtherLeagueMatches(
 
   const contextByClub = await buildClubSimulationContext(fixtureRows);
   const affectedLeagues = new Set<string>();
+  let completedCount = 0;
 
   for (const fixture of fixtureRows) {
     const home = contextByClub.get(fixture.home_club_id);
@@ -797,15 +799,18 @@ export async function simulateOtherLeagueMatches(
       continue;
     }
     const result = simulateFixture(home, away);
-    await completeFixture({ fixtureId: fixture.id, result });
-    affectedLeagues.add(fixture.league_id);
+    const transitioned = await completeFixture({ fixtureId: fixture.id, result });
+    if (transitioned) {
+      affectedLeagues.add(fixture.league_id);
+      completedCount += 1;
+    }
   }
 
   for (const leagueId of affectedLeagues) {
     await updateLeagueStandings(leagueId, seasonId);
   }
 
-  return fixtureRows.length;
+  return completedCount;
 }
 
 export async function getUpcomingFixturesForClub(clubId: string, seasonId?: string) {
@@ -891,6 +896,287 @@ export async function getLeagueTable(leagueId: string, seasonId: string): Promis
   });
 }
 
+export async function quickSimUserFixture(params: {
+  seasonId: string;
+  leagueId: string;
+  fixtureId: string;
+}): Promise<boolean> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from("matches")
+    .select("id, status, home_club_id, away_club_id, season_id, league_id")
+    .eq("id", params.fixtureId)
+    .eq("season_id", params.seasonId)
+    .eq("league_id", params.leagueId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to load user fixture for quick sim: ${error.message}`);
+  }
+
+  const fixture = (data as {
+    id: string;
+    status: MatchStatus;
+    home_club_id: string;
+    away_club_id: string;
+    season_id: string;
+    league_id: string;
+  } | null);
+  if (!fixture || fixture.status !== "scheduled") {
+    return false;
+  }
+
+  const contextByClub = await buildClubSimulationContext([fixture]);
+  const home = contextByClub.get(fixture.home_club_id);
+  const away = contextByClub.get(fixture.away_club_id);
+  if (!home || !away) {
+    return false;
+  }
+
+  const transitioned = await completeFixture({
+    fixtureId: fixture.id,
+    result: simulateFixture(home, away),
+  });
+  if (transitioned) {
+    await updateLeagueStandings(params.leagueId, params.seasonId);
+  }
+  return transitioned;
+}
+
+export async function runMatchday(
+  seasonId: string,
+  leagueId: string,
+  userClubId: string,
+): Promise<{ progressed: boolean; requiresUserMatch: boolean; season: SeasonRow; gameState: GameState; userFixtureId: string | null }> {
+  const supabase = getSupabaseClient();
+  const { data: seasonData, error: seasonError } = await supabase
+    .from("seasons")
+    .select("id, label, current_matchday, status")
+    .eq("id", seasonId)
+    .maybeSingle();
+
+  if (seasonError) {
+    throw new Error(`Failed to load season: ${seasonError.message}`);
+  }
+
+  const season = (seasonData as SeasonRow | null);
+  if (!season) {
+    throw new Error("Season not found.");
+  }
+
+  if (season.status === "completed") {
+    const gameState = setGameState({
+      seasonId,
+      leagueId,
+      currentMatchday: season.current_matchday,
+      userClubId,
+      status: "finished",
+    });
+    return { progressed: false, requiresUserMatch: false, season, gameState, userFixtureId: null };
+  }
+
+  const currentStatus = getGameStateStatus(seasonId);
+  if (currentStatus === "simulating" || matchdayLocks.has(seasonId)) {
+    const gameState = setGameState({
+      seasonId,
+      leagueId,
+      currentMatchday: season.current_matchday,
+      userClubId,
+      status: "simulating",
+    });
+    return { progressed: false, requiresUserMatch: true, season, gameState, userFixtureId: null };
+  }
+
+  if (currentStatus === "in-match") {
+    const { data: pendingUserFixture, error: pendingError } = await supabase
+      .from("matches")
+      .select("id")
+      .eq("season_id", seasonId)
+      .eq("league_id", leagueId)
+      .eq("matchday", season.current_matchday)
+      .eq("status", "scheduled")
+      .or(`home_club_id.eq.${userClubId},away_club_id.eq.${userClubId}`)
+      .limit(1);
+    if (pendingError) {
+      throw new Error(`Failed to check pending user fixture: ${pendingError.message}`);
+    }
+    const pendingUserFixtureId = ((pendingUserFixture ?? [])[0] as { id: string } | undefined)?.id ?? null;
+    if (pendingUserFixtureId) {
+      const gameState = setGameState({
+        seasonId,
+        leagueId,
+        currentMatchday: season.current_matchday,
+        userClubId,
+        status: "in-match",
+      });
+      return { progressed: false, requiresUserMatch: true, season, gameState, userFixtureId: pendingUserFixtureId };
+    }
+  }
+
+  matchdayLocks.add(seasonId);
+  try {
+    let gameState = setGameState({
+      seasonId,
+      leagueId,
+      currentMatchday: season.current_matchday,
+      userClubId,
+      status: "simulating",
+    });
+
+    const { data: fixtures, error: fixturesError } = await supabase
+      .from("matches")
+      .select("id, home_club_id, away_club_id, league_id, status")
+      .eq("season_id", seasonId)
+      .eq("league_id", leagueId)
+      .eq("matchday", season.current_matchday)
+      .eq("status", "scheduled");
+    if (fixturesError) {
+      throw new Error(`Failed to load matchday fixtures: ${fixturesError.message}`);
+    }
+
+    const fixtureRows = (fixtures ?? []) as Array<{
+      id: string;
+      home_club_id: string;
+      away_club_id: string;
+      league_id: string;
+      status: MatchStatus;
+    }>;
+
+    console.info(`[matchday start] season=${seasonId} league=${leagueId} matchday=${season.current_matchday}`);
+    console.info(`[matches loaded] count=${fixtureRows.length}`);
+
+    const userMatch = fixtureRows.find(
+      (fixture) => fixture.home_club_id === userClubId || fixture.away_club_id === userClubId,
+    ) ?? null;
+    const aiMatches = fixtureRows.filter((fixture) => fixture.id !== userMatch?.id);
+
+    console.info(`[ai matches count] count=${aiMatches.length}`);
+
+    let completedAiMatches = 0;
+    if (aiMatches.length > 0) {
+      const contextByClub = await buildClubSimulationContext(aiMatches);
+      for (const fixture of aiMatches) {
+        const home = contextByClub.get(fixture.home_club_id);
+        const away = contextByClub.get(fixture.away_club_id);
+        if (!home || !away) {
+          continue;
+        }
+        const transitioned = await completeFixture({
+          fixtureId: fixture.id,
+          result: simulateFixture(home, away),
+        });
+        if (transitioned) {
+          completedAiMatches += 1;
+        }
+      }
+    }
+
+    if (userMatch && userMatch.status !== "completed") {
+      console.info(`[user match detected] fixture=${userMatch.id}`);
+      gameState = setGameState({
+        seasonId,
+        leagueId,
+        currentMatchday: season.current_matchday,
+        userClubId,
+        status: "in-match",
+      });
+      if (completedAiMatches > 0) {
+        await updateLeagueStandings(leagueId, seasonId);
+      }
+      return { progressed: false, requiresUserMatch: true, season, gameState, userFixtureId: userMatch.id };
+    }
+
+    if (completedAiMatches > 0) {
+      await updateLeagueStandings(leagueId, seasonId);
+    }
+
+    const { data: remaining, error: remainingError } = await supabase
+      .from("matches")
+      .select("id")
+      .eq("season_id", season.id)
+      .eq("league_id", leagueId)
+      .eq("matchday", season.current_matchday)
+      .eq("status", "scheduled")
+      .limit(1);
+    if (remainingError) {
+      throw new Error(`Failed to check pending fixtures: ${remainingError.message}`);
+    }
+    if ((remaining ?? []).length > 0) {
+      gameState = setGameState({
+        seasonId,
+        leagueId,
+        currentMatchday: season.current_matchday,
+        userClubId,
+        status: "in-match",
+      });
+      return { progressed: false, requiresUserMatch: true, season, gameState, userFixtureId: null };
+    }
+
+    const { data: maxMatchdayRows, error: maxMatchdayError } = await supabase
+      .from("matches")
+      .select("matchday")
+      .eq("season_id", season.id)
+      .eq("league_id", leagueId)
+      .order("matchday", { ascending: false })
+      .limit(1);
+    if (maxMatchdayError) {
+      throw new Error(`Failed to determine season length: ${maxMatchdayError.message}`);
+    }
+    const maxMatchday = ((maxMatchdayRows ?? [])[0] as { matchday: number } | undefined)?.matchday ?? season.current_matchday;
+
+    if (season.current_matchday >= maxMatchday) {
+      const { error } = await supabase
+        .from("seasons")
+        .update({ status: "completed" } as never)
+        .eq("id", season.id);
+      if (error) {
+        throw new Error(`Failed to complete season: ${error.message}`);
+      }
+      const finishedSeason = { ...season, status: "completed" as const };
+      gameState = setGameState({
+        seasonId,
+        leagueId,
+        currentMatchday: season.current_matchday,
+        userClubId,
+        status: "finished",
+      });
+      console.info(`[matchday complete] season=${seasonId} matchday=${season.current_matchday}`);
+      return { progressed: true, requiresUserMatch: false, season: finishedSeason, gameState, userFixtureId: null };
+    }
+
+    const nextMatchday = season.current_matchday + 1;
+    const { error: updateError } = await supabase
+      .from("seasons")
+      .update({ current_matchday: nextMatchday } as never)
+      .eq("id", season.id);
+    if (updateError) {
+      throw new Error(`Failed to advance matchday: ${updateError.message}`);
+    }
+
+    const progressedSeason = { ...season, current_matchday: nextMatchday };
+    gameState = setGameState({
+      seasonId,
+      leagueId,
+      currentMatchday: nextMatchday,
+      userClubId,
+      status: "idle",
+    });
+    console.info(`[matchday complete] season=${seasonId} matchday=${season.current_matchday}`);
+    return { progressed: true, requiresUserMatch: false, season: progressedSeason, gameState, userFixtureId: null };
+  } finally {
+    if (getGameStateStatus(seasonId) === "simulating") {
+      setGameState({
+        seasonId,
+        leagueId,
+        currentMatchday: season.current_matchday,
+        userClubId,
+        status: "idle",
+      });
+    }
+    matchdayLocks.delete(seasonId);
+  }
+}
+
 export async function advanceMatchday(params: {
   seasonId?: string;
   userFixtureId?: string;
@@ -908,100 +1194,66 @@ export async function advanceMatchday(params: {
         ).data as SeasonRow | null
       )
     : await getActiveSeason();
-
   if (!season) {
     throw new Error("No active season available.");
   }
 
-  if (season.status === "completed") {
-    return { progressed: false, requiresUserMatch: false, season };
-  }
-
+  let targetLeagueId: string | null = null;
+  let targetUserClubId: string | null = null;
   if (params.userFixtureId) {
-    const { data: userFixture, error: fixtureError } = await supabase
+    const { data: fixtureData, error: fixtureError } = await supabase
       .from("matches")
-      .select("id, status, home_club_id, away_club_id")
+      .select("id, league_id, home_club_id, away_club_id")
       .eq("id", params.userFixtureId)
       .eq("season_id", season.id)
       .maybeSingle();
     if (fixtureError) {
       throw new Error(`Failed to inspect user fixture: ${fixtureError.message}`);
     }
-
-    const fixture = (userFixture as { id: string; status: MatchStatus; home_club_id: string; away_club_id: string } | null) ?? null;
-    if (fixture?.status === "scheduled" && !params.quickSimUserMatch) {
-      return { progressed: false, requiresUserMatch: true, season };
-    }
-
-    if (fixture?.status === "scheduled" && params.quickSimUserMatch) {
-      const contextByClub = await buildClubSimulationContext([fixture]);
-      const home = contextByClub.get(fixture.home_club_id);
-      const away = contextByClub.get(fixture.away_club_id);
-      if (home && away) {
-        await completeFixture({
+    const fixture = (fixtureData as {
+      id: string;
+      league_id: string;
+      home_club_id: string;
+      away_club_id: string;
+    } | null);
+    if (fixture) {
+      targetLeagueId = fixture.league_id;
+      targetUserClubId = fixture.home_club_id;
+      if (params.quickSimUserMatch) {
+        await quickSimUserFixture({
+          seasonId: season.id,
+          leagueId: fixture.league_id,
           fixtureId: fixture.id,
-          result: simulateFixture(home, away),
         });
       }
     }
   }
 
-  await simulateOtherLeagueMatches(season.id, season.current_matchday, params.userFixtureId ? [params.userFixtureId] : []);
-
-  const { data: remaining, error: remainingError } = await supabase
-    .from("matches")
-    .select("id")
-    .eq("season_id", season.id)
-    .eq("matchday", season.current_matchday)
-    .eq("status", "scheduled")
-    .limit(1);
-  if (remainingError) {
-    throw new Error(`Failed to check pending fixtures: ${remainingError.message}`);
-  }
-
-  if ((remaining ?? []).length > 0) {
-    return { progressed: false, requiresUserMatch: true, season };
-  }
-
-  const { data: maxMatchdayRows, error: maxMatchdayError } = await supabase
-    .from("matches")
-    .select("matchday")
-    .eq("season_id", season.id)
-    .order("matchday", { ascending: false })
-    .limit(1);
-  if (maxMatchdayError) {
-    throw new Error(`Failed to determine season length: ${maxMatchdayError.message}`);
-  }
-  const maxMatchday = ((maxMatchdayRows ?? [])[0] as { matchday: number } | undefined)?.matchday ?? season.current_matchday;
-
-  if (season.current_matchday >= maxMatchday) {
-    const { error } = await supabase
-      .from("seasons")
-      .update({ status: "completed" } as never)
-      .eq("id", season.id);
-    if (error) {
-      throw new Error(`Failed to complete season: ${error.message}`);
+  if (!targetLeagueId || !targetUserClubId) {
+    const { data: fallbackFixture, error: fallbackError } = await supabase
+      .from("matches")
+      .select("league_id, home_club_id")
+      .eq("season_id", season.id)
+      .eq("matchday", season.current_matchday)
+      .eq("status", "scheduled")
+      .limit(1)
+      .maybeSingle();
+    if (fallbackError) {
+      throw new Error(`Failed to determine matchday context: ${fallbackError.message}`);
     }
-    return {
-      progressed: true,
-      requiresUserMatch: false,
-      season: { ...season, status: "completed" },
-    };
+    const fallback = (fallbackFixture as { league_id: string; home_club_id: string } | null);
+    if (!fallback) {
+      return { progressed: false, requiresUserMatch: false, season };
+    }
+    targetLeagueId = fallback.league_id;
+    targetUserClubId = fallback.home_club_id;
   }
 
-  const nextMatchday = season.current_matchday + 1;
-  const { error: updateError } = await supabase
-    .from("seasons")
-    .update({ current_matchday: nextMatchday } as never)
-    .eq("id", season.id);
-  if (updateError) {
-    throw new Error(`Failed to advance matchday: ${updateError.message}`);
-  }
-
+  const outcome = await runMatchday(season.id, targetLeagueId, targetUserClubId);
   return {
-    progressed: true,
-    requiresUserMatch: false,
-    season: { ...season, current_matchday: nextMatchday },
+    progressed: outcome.progressed,
+    requiresUserMatch: outcome.requiresUserMatch,
+    season: outcome.season,
   };
 }
 

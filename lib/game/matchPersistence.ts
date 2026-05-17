@@ -1,5 +1,5 @@
 import { getSupabaseClient } from "@/lib/supabase";
-import { advanceMatchday, updateLeagueStandings } from "@/lib/game/seasonEngine";
+import { runMatchday, updateLeagueStandings } from "@/lib/game/seasonEngine";
 import type { MatchState } from "@/lib/matchSimulator";
 import type { Player } from "@/types/player";
 
@@ -15,12 +15,17 @@ type PersistMatchInput = {
 };
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const BASE_FORM_VALUE = 45;
+const FORM_POINTS_MULTIPLIER = 16;
+const MIN_FITNESS_DROP = 8;
+const FITNESS_DROP_VARIANCE = 5;
 
 async function getCurrentSeasonId(): Promise<string> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from("seasons")
     .select("id")
+    .eq("status", "active")
     .order("started_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -33,19 +38,73 @@ async function getCurrentSeasonId(): Promise<string> {
   return season.id;
 }
 
-async function updatePlayerMoraleAndForm(players: Player[], didWin: boolean, didDraw: boolean): Promise<void> {
+async function calculateRecentForm(clubId: string, seasonId: string, leagueId: string): Promise<number> {
   const supabase = getSupabaseClient();
-  const moraleDelta = didWin ? 4 : didDraw ? 1 : -3;
-  const formDelta = didWin ? 5 : didDraw ? 1 : -4;
+  const { data, error } = await supabase
+    .from("matches")
+    .select("home_club_id, away_club_id, home_goals, away_goals")
+    .eq("season_id", seasonId)
+    .eq("league_id", leagueId)
+    .eq("status", "completed")
+    .or(`home_club_id.eq.${clubId},away_club_id.eq.${clubId}`)
+    .order("played_at", { ascending: false })
+    .limit(3);
+
+  if (error) {
+    throw new Error(`Failed to calculate recent form: ${error.message}`);
+  }
+
+  const matches = (data ?? []) as Array<{
+    home_club_id: string;
+    away_club_id: string;
+    home_goals: number | null;
+    away_goals: number | null;
+  }>;
+  if (matches.length === 0) {
+    return 50;
+  }
+
+  const totalPoints = matches.reduce((total, match) => {
+    if (match.home_goals === null || match.away_goals === null) {
+      return total;
+    }
+    const isHome = match.home_club_id === clubId;
+    const goalsFor = isHome ? match.home_goals : match.away_goals;
+    const goalsAgainst = isHome ? match.away_goals : match.home_goals;
+    if (goalsFor > goalsAgainst) {
+      return total + 3;
+    }
+    if (goalsFor === goalsAgainst) {
+      return total + 1;
+    }
+    return total;
+  }, 0);
+
+  const averagePoints = totalPoints / matches.length;
+  return clamp(Math.round(BASE_FORM_VALUE + averagePoints * FORM_POINTS_MULTIPLIER), 1, 99);
+}
+
+async function updatePlayerMoraleAndForm(
+  players: Player[],
+  didWin: boolean,
+  didDraw: boolean,
+  clubId: string,
+  seasonId: string,
+  leagueId: string,
+): Promise<void> {
+  const supabase = getSupabaseClient();
+  const moraleDelta = didWin ? 5 : didDraw ? 0 : -5;
+  const formValue = await calculateRecentForm(clubId, seasonId, leagueId);
 
   await Promise.all(
     players.map(async (player) => {
+      const fitnessDrop = MIN_FITNESS_DROP + Math.floor(Math.random() * FITNESS_DROP_VARIANCE);
       const { error } = await supabase
         .from("players")
         .update({
           morale: clamp(player.morale + moraleDelta, 1, 99),
-          form: clamp(player.form + formDelta, 1, 99),
-          fitness: clamp(player.fitness - 3, 1, 99),
+          form: formValue,
+          fitness: clamp(player.fitness - fitnessDrop, 1, 99),
         } as never)
         .eq("id", player.id);
       if (error) {
@@ -118,7 +177,7 @@ export async function persistMatchAndProgress(input: PersistMatchInput): Promise
     throw new Error("Fixture clubs are not in the same league.");
   }
 
-  const { error: matchError } = await supabase
+  const { data: completedRows, error: matchError } = await supabase
     .from("matches")
     .update({
       home_goals: state.homeScore,
@@ -131,10 +190,14 @@ export async function persistMatchAndProgress(input: PersistMatchInput): Promise
       played_at: new Date().toISOString(),
     } as never)
     .eq("id", fixtureId)
-    .eq("status", "scheduled");
+    .eq("status", "scheduled")
+    .select("id");
 
   if (matchError) {
     throw new Error(`Failed to store match: ${matchError.message}`);
+  }
+  if ((completedRows ?? []).length === 0) {
+    return;
   }
 
   await updateLeagueStandings(leagueId, seasonId);
@@ -144,12 +207,9 @@ export async function persistMatchAndProgress(input: PersistMatchInput): Promise
   const draw = state.homeScore === state.awayScore;
 
   await Promise.all([
-    updatePlayerMoraleAndForm(homePlayers, homeWin, draw),
-    updatePlayerMoraleAndForm(awayPlayers, awayWin, draw),
+    updatePlayerMoraleAndForm(homePlayers, homeWin, draw, homeClubId, seasonId, leagueId),
+    updatePlayerMoraleAndForm(awayPlayers, awayWin, draw, awayClubId, seasonId, leagueId),
   ]);
 
-  await advanceMatchday({
-    seasonId,
-    userFixtureId: fixtureId,
-  });
+  await runMatchday(seasonId, leagueId, userClubId);
 }
