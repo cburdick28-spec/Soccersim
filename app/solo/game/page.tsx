@@ -4,18 +4,16 @@ import {
   getLeagueTable,
   getRecentLeagueResults,
   getUpcomingFixturesForClub,
-  initializeSeason,
-  quickSimUserFixture,
-  runMatchday,
 } from "@/lib/game/seasonEngine";
 import { getClubById, getClubsByLeague, getLeagueById, getPlayersByClub } from "@/lib/players";
+import { advanceMatchdayAction, initializeCareerAction, quickSimUpcomingFixtureAction } from "./season-actions";
 
 type SoloGamePageProps = {
-  searchParams: Promise<{ clubId?: string; leagueId?: string; quickSim?: string; fixtureId?: string }>;
+  searchParams: Promise<{ clubId?: string; leagueId?: string }>;
 };
 
 export default async function SoloGamePage({ searchParams }: SoloGamePageProps) {
-  const { clubId, leagueId, quickSim, fixtureId } = await searchParams;
+  const { clubId, leagueId } = await searchParams;
   const selectedClubId = clubId?.trim();
   const selectedLeagueId = leagueId?.trim();
 
@@ -28,31 +26,10 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
   const clubsInLeague = selectedLeagueId ? await getClubsByLeague(selectedLeagueId) : [];
   const clubNameById = new Map(clubsInLeague.map((club) => [club.id, club.name]));
 
-  let activeSeason = selectedClubId ? await initializeSeason() : null;
-  if (selectedClubId && selectedLeagueId && activeSeason?.status === "active") {
-    await runMatchday(activeSeason.id, selectedLeagueId, selectedClubId);
-    activeSeason = await getActiveSeason();
-  }
-  let upcomingFixture = selectedClubId
+  const activeSeason = selectedClubId ? await getActiveSeason() : null;
+  const upcomingFixture = selectedClubId
     ? await getUpcomingFixturesForClub(selectedClubId, activeSeason?.id)
     : null;
-  if (
-    selectedClubId &&
-    selectedLeagueId &&
-    activeSeason &&
-    quickSim === "1" &&
-    fixtureId &&
-    upcomingFixture?.id === fixtureId
-  ) {
-    await quickSimUserFixture({
-      seasonId: activeSeason.id,
-      leagueId: selectedLeagueId,
-      fixtureId,
-    });
-    await runMatchday(activeSeason.id, selectedLeagueId, selectedClubId);
-    activeSeason = await getActiveSeason();
-    upcomingFixture = activeSeason ? await getUpcomingFixturesForClub(selectedClubId, activeSeason.id) : null;
-  }
 
   const leagueTable =
     selectedLeagueId && activeSeason
@@ -123,6 +100,23 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
         </section>
       )}
 
+      {selectedClub && selectedLeague && !activeSeason && (
+        <section className="panel p-6">
+          <h2 className="text-lg font-semibold">Career Setup</h2>
+          <p className="mt-2 text-sm text-slate-300">Initialize your first season to start fixtures and standings.</p>
+          <form action={initializeCareerAction}>
+            <input type="hidden" name="leagueId" value={selectedLeagueId ?? ""} />
+            <input type="hidden" name="clubId" value={selectedClubId ?? ""} />
+            <button
+              type="submit"
+              className="mt-4 rounded-md bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950"
+            >
+              Initialize Season
+            </button>
+          </form>
+        </section>
+      )}
+
       {selectedClub && selectedLeague && activeSeason && (
         <section className="panel p-6">
           <h2 className="text-lg font-semibold">Next Fixture Preview</h2>
@@ -148,12 +142,31 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
                   </Link>
                 )}
                 {canPlayUpcomingMatch && (
-                  <Link
-                    href={`/solo/game?leagueId=${encodeURIComponent(selectedLeagueId ?? "")}&clubId=${encodeURIComponent(selectedClubId ?? "")}&quickSim=1&fixtureId=${encodeURIComponent(upcomingFixture.id)}`}
-                    className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200"
-                  >
-                    Quick Sim Match
-                  </Link>
+                  <form action={quickSimUpcomingFixtureAction}>
+                    <input type="hidden" name="seasonId" value={activeSeason.id} />
+                    <input type="hidden" name="leagueId" value={selectedLeagueId ?? ""} />
+                    <input type="hidden" name="clubId" value={selectedClubId ?? ""} />
+                    <input type="hidden" name="fixtureId" value={upcomingFixture.id} />
+                    <button
+                      type="submit"
+                      className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200"
+                    >
+                      Quick Sim Match
+                    </button>
+                  </form>
+                )}
+                {!canPlayUpcomingMatch && (
+                  <form action={advanceMatchdayAction}>
+                    <input type="hidden" name="seasonId" value={activeSeason.id} />
+                    <input type="hidden" name="leagueId" value={selectedLeagueId ?? ""} />
+                    <input type="hidden" name="clubId" value={selectedClubId ?? ""} />
+                    <button
+                      type="submit"
+                      className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200"
+                    >
+                      Simulate Matchday
+                    </button>
+                  </form>
                 )}
               </div>
             </>
