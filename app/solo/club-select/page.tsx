@@ -52,6 +52,11 @@ export default function ClubSelectPage() {
 
       try {
         console.log("selectedLeagueId", selectedLeagueId);
+        const { data: testData, error: testError } = await supabase.from("clubs").select("*").limit(5);
+        console.log("DIRECT CLUB TEST");
+        console.log(testData);
+        console.log(testError);
+
         const { data, error } = await supabase
           .from("clubs")
           .select("*")
