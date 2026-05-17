@@ -13,8 +13,22 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
 });
 
 function getReputationStars(reputation: number) {
-  const filled = Math.max(1, Math.min(5, Math.round(reputation / 20)));
+  const filled = Math.max(0, Math.min(5, Math.round(reputation / 20)));
   return `${"★".repeat(filled)}${"☆".repeat(5 - filled)}`;
+}
+
+function getClubBadgeLabel(clubName: string) {
+  const words = clubName
+    .split(" ")
+    .map((word) => word.trim())
+    .filter(Boolean);
+  const initials = words
+    .slice(0, 2)
+    .map((part) => part[0])
+    .filter(Boolean)
+    .join("")
+    .toUpperCase();
+  return initials || "FC";
 }
 
 function getBoardObjective(reputation: number) {
@@ -174,12 +188,7 @@ export default function ClubSelectPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3">
                     <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-sm font-bold text-slate-100">
-                      {club.name
-                        .split(" ")
-                        .slice(0, 2)
-                        .map((part) => part[0])
-                        .join("")
-                        .toUpperCase()}
+                      {getClubBadgeLabel(club.name)}
                     </span>
                     <div>
                       <span className="font-medium">{club.name}</span>
