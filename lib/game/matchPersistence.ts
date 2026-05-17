@@ -26,6 +26,7 @@ async function getCurrentSeasonId(): Promise<string> {
     .from("seasons")
     .select("id")
     .eq("status", "active")
+    .order("started_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 

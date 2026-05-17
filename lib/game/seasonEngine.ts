@@ -1056,9 +1056,6 @@ export async function runMatchday(
     if (aiMatches.length > 0) {
       const contextByClub = await buildClubSimulationContext(aiMatches);
       for (const fixture of aiMatches) {
-        if (fixture.status === "completed") {
-          continue;
-        }
         const home = contextByClub.get(fixture.home_club_id);
         const away = contextByClub.get(fixture.away_club_id);
         if (!home || !away) {
