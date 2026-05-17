@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getLeagues, type Club, type League } from "@/lib/players";
 import { supabase } from "@/lib/supabase/client";
 
@@ -48,12 +48,21 @@ export default function ClubSelectPage() {
   const [selectedClubId, setSelectedClubId] = useState<string>("");
   const [clubsInSelectedLeague, setClubsInSelectedLeague] = useState<Club[]>([]);
   const latestClubRequestId = useRef(0);
-  const selectedLeague = allLeagues.find((league) => league.id === selectedLeagueId) ?? null;
-  const averageReputation =
-    clubsInSelectedLeague.length > 0
-      ? Math.round(clubsInSelectedLeague.reduce((total, club) => total + club.reputation, 0) / clubsInSelectedLeague.length)
-      : 0;
-  const totalFinances = clubsInSelectedLeague.reduce((total, club) => total + club.finances, 0);
+  const selectedLeague = useMemo(
+    () => allLeagues.find((league) => league.id === selectedLeagueId) ?? null,
+    [allLeagues, selectedLeagueId],
+  );
+  const averageReputation = useMemo(
+    () =>
+      clubsInSelectedLeague.length > 0
+        ? Math.round(clubsInSelectedLeague.reduce((total, club) => total + club.reputation, 0) / clubsInSelectedLeague.length)
+        : 0,
+    [clubsInSelectedLeague],
+  );
+  const totalFinances = useMemo(
+    () => clubsInSelectedLeague.reduce((total, club) => total + club.finances, 0),
+    [clubsInSelectedLeague],
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -178,7 +187,7 @@ export default function ClubSelectPage() {
               <button
                 key={club.id}
                 onClick={() => setSelectedClubId(club.id)}
-                className={`card-glow rounded-lg border px-4 py-3 text-left transition-all duration-200 ${
+                className={`rounded-lg border px-4 py-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_0_0_1px_rgba(56,189,248,0.3),0_12px_24px_rgba(15,23,42,0.45)] ${
                   selectedClubId === club.id
                     ? "border-sky-400 bg-sky-500/15 text-sky-200 shadow-[0_0_0_1px_rgba(56,189,248,0.35)]"
                     : "border-slate-700 text-slate-200 hover:border-slate-500 hover:bg-slate-900/70"
