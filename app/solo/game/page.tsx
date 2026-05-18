@@ -4,12 +4,35 @@ import {
   getLeagueTable,
   getRecentLeagueResults,
   getUpcomingFixturesForClub,
+  type SeasonRow,
+  type LeagueTableRow,
 } from "@/lib/game/seasonEngine";
-import { getClubById, getClubsByLeague, getLeagueById, getPlayersByClub } from "@/lib/players";
+import { getClubById, getClubsByLeague, getLeagueById, getPlayersByClub, type Club, type League } from "@/lib/players";
+import type { Player } from "@/types/player";
 import { advanceMatchdayAction, initializeCareerAction, quickSimUpcomingFixtureAction } from "./season-actions";
 
 type SoloGamePageProps = {
   searchParams: Promise<{ clubId?: string; leagueId?: string }>;
+};
+
+type UpcomingFixture = {
+  id: string;
+  league_id: string;
+  season_id: string;
+  home_club_id: string;
+  away_club_id: string;
+  matchday: number;
+  status: string;
+} | null;
+
+type RecentResult = {
+  id: string;
+  home_club_id: string;
+  away_club_id: string;
+  home_goals: number;
+  away_goals: number;
+  matchday: number;
+  played_at: string;
 };
 
 export default async function SoloGamePage({ searchParams }: SoloGamePageProps) {
@@ -17,28 +40,53 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
   const selectedClubId = clubId?.trim();
   const selectedLeagueId = leagueId?.trim();
 
-  const selectedClub = selectedClubId ? await getClubById(selectedClubId) : null;
-  const selectedLeague = selectedLeagueId ? await getLeagueById(selectedLeagueId) : null;
-  const selectedClubPlayers =
-    selectedClubId
-      ? await getPlayersByClub(selectedClubId)
-      : [];
-  const clubsInLeague = selectedLeagueId ? await getClubsByLeague(selectedLeagueId) : [];
+  let selectedClub: Club | null = null;
+  let selectedLeague: League | null = null;
+  let selectedClubPlayers: Player[] = [];
+  let clubsInLeague: Club[] = [];
+  let activeSeason: SeasonRow | null = null;
+  let upcomingFixture: UpcomingFixture = null;
+  let leagueTable: LeagueTableRow[] = [];
+  let recentResults: RecentResult[] = [];
+  let pageLoadError = false;
+
+  try {
+    [selectedClub, selectedLeague, selectedClubPlayers, clubsInLeague] = await Promise.all([
+      selectedClubId ? getClubById(selectedClubId) : Promise.resolve(null),
+      selectedLeagueId ? getLeagueById(selectedLeagueId) : Promise.resolve(null),
+      selectedClubId ? getPlayersByClub(selectedClubId) : Promise.resolve([]),
+      selectedLeagueId ? getClubsByLeague(selectedLeagueId) : Promise.resolve([]),
+    ]);
+  } catch (err) {
+    console.error("[SoloGamePage] Failed to load club/league data:", err);
+    pageLoadError = true;
+  }
+
+  if (!pageLoadError) {
+    try {
+      activeSeason = selectedClubId ? await getActiveSeason() : null;
+    } catch (err) {
+      console.error("[SoloGamePage] Failed to load active season:", err);
+    }
+
+    try {
+      [upcomingFixture, leagueTable, recentResults] = await Promise.all([
+        selectedClubId
+          ? getUpcomingFixturesForClub(selectedClubId, activeSeason?.id)
+          : Promise.resolve(null),
+        selectedLeagueId && activeSeason
+          ? getLeagueTable(selectedLeagueId, activeSeason.id)
+          : Promise.resolve([]),
+        selectedLeagueId && activeSeason
+          ? getRecentLeagueResults(selectedLeagueId, activeSeason.id, 8)
+          : Promise.resolve([]),
+      ]);
+    } catch (err) {
+      console.error("[SoloGamePage] Failed to load fixtures/table/results:", err);
+    }
+  }
+
   const clubNameById = new Map(clubsInLeague.map((club) => [club.id, club.name]));
-
-  const activeSeason = selectedClubId ? await getActiveSeason() : null;
-  const upcomingFixture = selectedClubId
-    ? await getUpcomingFixturesForClub(selectedClubId, activeSeason?.id)
-    : null;
-
-  const leagueTable =
-    selectedLeagueId && activeSeason
-      ? await getLeagueTable(selectedLeagueId, activeSeason.id)
-      : [];
-  const recentResults =
-    selectedLeagueId && activeSeason
-      ? await getRecentLeagueResults(selectedLeagueId, activeSeason.id, 8)
-      : [];
 
   const upcomingOpponentId =
     upcomingFixture?.home_club_id === selectedClubId
@@ -49,6 +97,27 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
     Boolean(upcomingFixture) &&
     upcomingFixture?.league_id === selectedLeagueId &&
     [upcomingFixture?.home_club_id, upcomingFixture?.away_club_id].includes(selectedClubId ?? "");
+
+  if (pageLoadError) {
+    return (
+      <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-6 px-4 py-8 sm:px-6">
+        <section className="panel p-6">
+          <h1 className="text-2xl font-bold">Solo Career</h1>
+          <p className="mt-2 text-sm text-amber-300">
+            Unable to load career data. Please check your connection and try again.
+          </p>
+        </section>
+        <div className="flex gap-3">
+          <Link href="/solo/club-select" className="rounded-md bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950">
+            Choose Club
+          </Link>
+          <Link href="/" className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200">
+            Back to Home
+          </Link>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-6 px-4 py-8 sm:px-6">
