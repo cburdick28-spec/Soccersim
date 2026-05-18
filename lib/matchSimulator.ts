@@ -84,8 +84,7 @@ const initialTactics = (): TeamTactics => ({
 const average = (values: number[]) => (values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0);
 
 export const effectiveRating = (player: Player, minute = 0) => {
-  const baseOverall =
-    (player.pace + player.shooting + player.passing + player.dribbling + player.defending + player.physical) / 6;
+  const baseOverall = player.overall;
   const formModifier = (player.form - 50) * 0.15;
   const moraleModifier = (player.morale - 70) * 0.1;
   const fatiguePenalty = ((100 - player.fitness) * 0.08 + minute * 0.06);

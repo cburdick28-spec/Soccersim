@@ -59,6 +59,17 @@ export type LeagueTableRow = {
   points: number;
 };
 
+export type SeasonInitializationVerification = {
+  ok: boolean;
+  seasonExists: boolean;
+  seasonStatus: SeasonStatus | null;
+  expectedFixtureCount: number;
+  actualFixtureCount: number;
+  expectedStandingsCount: number;
+  actualStandingsCount: number;
+  missingArtifacts: string[];
+};
+
 type StandingAccumulator = {
   played: number;
   won: number;
@@ -441,11 +452,74 @@ async function insertFixtures(fixtures: FixtureInsert[]): Promise<void> {
   }
 }
 
+const toFixtureKey = (fixture: {
+  home_club_id: string;
+  away_club_id: string;
+  season_id: string;
+  matchday: number;
+}) => `${fixture.home_club_id}:${fixture.away_club_id}:${fixture.season_id}:${fixture.matchday}`;
+
+const expectedFixturesForLeague = (leagueId: string, seasonId: string, clubIds: string[]) =>
+  generateRoundRobinFixtures(leagueId, seasonId, [...clubIds].sort((a, b) => a.localeCompare(b)));
+
+async function ensureSeasonFixturesComplete(seasonId: string): Promise<{ insertedFixtures: number; expectedFixtures: number }> {
+  const supabase = getSupabase();
+  const [{ data: clubs, error: clubsError }, { data: fixtures, error: fixturesError }] = await Promise.all([
+    supabase.from("clubs").select("id, league_id"),
+    supabase
+      .from("matches")
+      .select("id, league_id, season_id, home_club_id, away_club_id, matchday")
+      .eq("season_id", seasonId),
+  ]);
+
+  if (clubsError || fixturesError) {
+    throw new Error(`Failed fixture completeness check: ${clubsError?.message ?? fixturesError?.message}`);
+  }
+
+  const groupedByLeague = new Map<string, string[]>();
+  ((clubs ?? []) as Array<{ id: string; league_id: string }>).forEach((club) => {
+    const current = groupedByLeague.get(club.league_id) ?? [];
+    current.push(club.id);
+    groupedByLeague.set(club.league_id, current);
+  });
+
+  const existingFixtureKeys = new Set(
+    ((fixtures ?? []) as Array<{
+      home_club_id: string;
+      away_club_id: string;
+      season_id: string;
+      matchday: number;
+    }>).map((fixture) => toFixtureKey(fixture)),
+  );
+
+  const missingFixtures: FixtureInsert[] = [];
+  let expectedFixtures = 0;
+  groupedByLeague.forEach((clubIds, leagueId) => {
+    if (clubIds.length < 2) {
+      return;
+    }
+    const expected = expectedFixturesForLeague(leagueId, seasonId, clubIds);
+    expectedFixtures += expected.length;
+    expected.forEach((fixture) => {
+      if (!existingFixtureKeys.has(toFixtureKey(fixture))) {
+        missingFixtures.push(fixture);
+      }
+    });
+  });
+
+  if (missingFixtures.length > 0) {
+    await insertFixtures(missingFixtures);
+  }
+
+  return { insertedFixtures: missingFixtures.length, expectedFixtures };
+}
+
 type IntegrityIssue =
   | "league_without_clubs"
   | "club_without_league"
   | "orphan_players"
   | "duplicate_fixtures"
+  | "missing_fixtures"
   | "club_double_booked"
   | "missing_standings"
   | "invalid_season_reference";
@@ -555,6 +629,11 @@ export async function validateSeasonIntegrity(seasonId: string): Promise<{
     }
   }
 
+  const fixtureRepair = await ensureSeasonFixturesComplete(seasonId);
+  if (fixtureRepair.insertedFixtures > 0) {
+    issues.add("missing_fixtures");
+  }
+
   const appearancesByClubDay = new Map<string, number>();
   fixtureRows.forEach((fixture) => {
     const homeKey = `${fixture.matchday}:${fixture.home_club_id}`;
@@ -589,41 +668,103 @@ export async function validateSeasonIntegrity(seasonId: string): Promise<{
   };
 }
 
-export async function initializeSeason(): Promise<SeasonRow> {
+export async function verifySeasonInitialization(seasonId: string): Promise<SeasonInitializationVerification> {
   const supabase = getSupabase();
-  await repairClubEconomyAndReputation();
-  const season = await getOrCreateActiveSeason();
-  await ensureStandingsRows(season.id);
+  const [{ data: seasonRow, error: seasonError }, { data: clubs, error: clubsError }] = await Promise.all([
+    supabase.from("seasons").select("id, status").eq("id", seasonId).maybeSingle(),
+    supabase.from("clubs").select("id, league_id"),
+  ]);
 
-  const initialized = await seasonAlreadyInitialized(season.id);
-  if (!initialized) {
-    const { data: clubs, error: clubsError } = await supabase
-      .from("clubs")
-      .select("id, league_id")
-      .order("league_id", { ascending: true });
-    if (clubsError) {
-      throw new Error(`Failed to load clubs for fixture generation: ${clubsError.message}`);
-    }
-
-    const groupedByLeague = new Map<string, string[]>();
-    ((clubs ?? []) as Array<{ id: string; league_id: string }>).forEach((club) => {
-      const leagueClubs = groupedByLeague.get(club.league_id) ?? [];
-      leagueClubs.push(club.id);
-      groupedByLeague.set(club.league_id, leagueClubs);
-    });
-
-    const fixtures: FixtureInsert[] = [];
-    groupedByLeague.forEach((clubIds, leagueId) => {
-      if (clubIds.length < 2) {
-        return;
-      }
-      fixtures.push(...generateRoundRobinFixtures(leagueId, season.id, clubIds));
-    });
-    await insertFixtures(fixtures);
+  if (seasonError || clubsError) {
+    throw new Error(`Failed season verification preflight: ${seasonError?.message ?? clubsError?.message}`);
   }
 
-  await validateSeasonIntegrity(season.id);
-  return season;
+  const clubRows = (clubs ?? []) as Array<{ id: string; league_id: string }>;
+  const clubsByLeague = new Map<string, number>();
+  clubRows.forEach((club) => {
+    clubsByLeague.set(club.league_id, (clubsByLeague.get(club.league_id) ?? 0) + 1);
+  });
+
+  let expectedFixtureCount = 0;
+  clubsByLeague.forEach((clubCount) => {
+    if (clubCount >= 2) {
+      expectedFixtureCount += clubCount * (clubCount - 1);
+    }
+  });
+
+  const expectedStandingsCount = clubRows.length;
+  const [{ count: actualFixtureCount, error: fixtureCountError }, { count: actualStandingsCount, error: standingsCountError }] =
+    await Promise.all([
+      supabase.from("matches").select("id", { count: "exact", head: true }).eq("season_id", seasonId),
+      supabase.from("standings").select("id", { count: "exact", head: true }).eq("season_id", seasonId),
+    ]);
+
+  if (fixtureCountError || standingsCountError) {
+    throw new Error(`Failed season verification counts: ${fixtureCountError?.message ?? standingsCountError?.message}`);
+  }
+
+  const seasonExists = Boolean(seasonRow);
+  const seasonStatus = (seasonRow as { status: SeasonStatus } | null)?.status ?? null;
+  const verifiedFixtureCount = actualFixtureCount ?? 0;
+  const verifiedStandingsCount = actualStandingsCount ?? 0;
+  const missingArtifacts: string[] = [];
+
+  if (!seasonExists) {
+    missingArtifacts.push("active season row");
+  } else if (seasonStatus !== "active" && seasonStatus !== "processing") {
+    missingArtifacts.push("active season status");
+  }
+  if (verifiedFixtureCount < expectedFixtureCount || verifiedFixtureCount === 0) {
+    missingArtifacts.push("fixtures schedule");
+  }
+  if (verifiedStandingsCount < expectedStandingsCount || verifiedStandingsCount === 0) {
+    missingArtifacts.push("standings rows");
+  }
+
+  return {
+    ok: missingArtifacts.length === 0,
+    seasonExists,
+    seasonStatus,
+    expectedFixtureCount,
+    actualFixtureCount: verifiedFixtureCount,
+    expectedStandingsCount,
+    actualStandingsCount: verifiedStandingsCount,
+    missingArtifacts,
+  };
+}
+
+export async function initializeSeason(): Promise<SeasonRow> {
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      console.info(`[initializeSeason] attempt=${attempt}: start`);
+      await repairClubEconomyAndReputation();
+      const season = await getOrCreateActiveSeason();
+      await ensureStandingsRows(season.id);
+      await ensureSeasonFixturesComplete(season.id);
+
+      const integrity = await validateSeasonIntegrity(season.id);
+      if (!integrity.ok) {
+        console.warn(`[initializeSeason] integrity issues detected: ${integrity.detectedIssues.join(", ")}`);
+      }
+
+      const verification = await verifySeasonInitialization(season.id);
+      if (!verification.ok) {
+        throw new Error(
+          `Season verification failed: missing=${verification.missingArtifacts.join(", ")} fixtures=${verification.actualFixtureCount}/${verification.expectedFixtureCount} standings=${verification.actualStandingsCount}/${verification.expectedStandingsCount}`,
+        );
+      }
+
+      console.info(
+        `[initializeSeason] success season=${season.id} fixtures=${verification.actualFixtureCount} standings=${verification.actualStandingsCount}`,
+      );
+      return season;
+    } catch (error) {
+      lastError = error;
+      console.error(`[initializeSeason] attempt=${attempt} failed`, error);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Season initialization failed after retries.");
 }
 
 export async function updateLeagueStandings(leagueId: string, seasonId: string): Promise<void> {

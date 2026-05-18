@@ -10,9 +10,10 @@ import {
 import { getClubById, getClubsByLeague, getLeagueById, getPlayersByClub, type Club, type League } from "@/lib/players";
 import type { Player } from "@/types/player";
 import { advanceMatchdayAction, initializeCareerAction, quickSimUpcomingFixtureAction } from "./season-actions";
+import InitializeSeasonForm from "./initialize-season-form";
 
 type SoloGamePageProps = {
-  searchParams: Promise<{ clubId?: string; leagueId?: string }>;
+  searchParams: Promise<{ clubId?: string; leagueId?: string; initStatus?: string; initError?: string }>;
 };
 
 type UpcomingFixture = {
@@ -36,7 +37,7 @@ type RecentResult = {
 };
 
 export default async function SoloGamePage({ searchParams }: SoloGamePageProps) {
-  const { clubId, leagueId } = await searchParams;
+  const { clubId, leagueId, initStatus, initError } = await searchParams;
   const selectedClubId = clubId?.trim();
   const selectedLeagueId = leagueId?.trim();
 
@@ -133,6 +134,10 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
           </p>
         )}
         {selectedLeague && <p className="mt-2 text-xs text-slate-400">League: {selectedLeague.name}</p>}
+        {initStatus === "success" && (
+          <p className="mt-2 text-xs text-emerald-300">Season initialized. Fixtures and standings are ready.</p>
+        )}
+        {initError && <p className="mt-2 text-xs text-red-300">Initialize Season failed: {initError}</p>}
         {activeSeason && (
           <p className="mt-2 text-xs text-slate-400">
             Season {activeSeason.label} • Matchday {activeSeason.current_matchday} • {activeSeason.status}
@@ -173,16 +178,13 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
         <section className="panel p-6">
           <h2 className="text-lg font-semibold">Career Setup</h2>
           <p className="mt-2 text-sm text-slate-300">Initialize your first season to start fixtures and standings.</p>
-          <form action={initializeCareerAction}>
-            <input type="hidden" name="leagueId" value={selectedLeagueId ?? ""} />
-            <input type="hidden" name="clubId" value={selectedClubId ?? ""} />
-            <button
-              type="submit"
-              className="mt-4 rounded-md bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950"
-            >
-              Initialize Season
-            </button>
-          </form>
+          <InitializeSeasonForm
+            leagueId={selectedLeagueId ?? ""}
+            clubId={selectedClubId ?? ""}
+            initStatus={initStatus}
+            initError={initError}
+            action={initializeCareerAction}
+          />
         </section>
       )}
 
