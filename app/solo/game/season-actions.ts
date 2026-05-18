@@ -17,8 +17,12 @@ const toGamePath = (leagueId: string, clubId: string) =>
 export async function initializeCareerAction(formData: FormData) {
   const leagueId = getRequired(formData.get("leagueId"), "league");
   const clubId = getRequired(formData.get("clubId"), "club");
-  const season = await initializeSeason();
-  await runMatchday(season.id, leagueId, clubId);
+  try {
+    const season = await initializeSeason();
+    await runMatchday(season.id, leagueId, clubId);
+  } catch (err) {
+    console.error("[initializeCareerAction] Season initialization failed:", err);
+  }
   redirect(toGamePath(leagueId, clubId));
 }
 
@@ -27,8 +31,12 @@ export async function quickSimUpcomingFixtureAction(formData: FormData) {
   const leagueId = getRequired(formData.get("leagueId"), "league");
   const clubId = getRequired(formData.get("clubId"), "club");
   const fixtureId = getRequired(formData.get("fixtureId"), "fixture");
-  await quickSimUserFixture({ seasonId, leagueId, fixtureId });
-  await runMatchday(seasonId, leagueId, clubId);
+  try {
+    await quickSimUserFixture({ seasonId, leagueId, fixtureId });
+    await runMatchday(seasonId, leagueId, clubId);
+  } catch (err) {
+    console.error("[quickSimUpcomingFixtureAction] Quick sim failed:", err);
+  }
   redirect(toGamePath(leagueId, clubId));
 }
 
@@ -36,6 +44,10 @@ export async function advanceMatchdayAction(formData: FormData) {
   const seasonId = getRequired(formData.get("seasonId"), "season");
   const leagueId = getRequired(formData.get("leagueId"), "league");
   const clubId = getRequired(formData.get("clubId"), "club");
-  await runMatchday(seasonId, leagueId, clubId);
+  try {
+    await runMatchday(seasonId, leagueId, clubId);
+  } catch (err) {
+    console.error("[advanceMatchdayAction] Matchday advance failed:", err);
+  }
   redirect(toGamePath(leagueId, clubId));
 }
