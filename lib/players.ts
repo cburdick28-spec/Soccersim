@@ -1,4 +1,4 @@
-import { getSupabaseClient } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase/client";
 import type { Player } from "@/types/player";
 
 export type League = {
@@ -80,7 +80,7 @@ const toPlayer = (row: RawPlayerRow): Player => {
 };
 
 export async function getLeagues(): Promise<League[]> {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const { data: leagues, error } = await supabase
     .from("leagues")
     .select("id, name")
@@ -94,7 +94,7 @@ export async function getLeagues(): Promise<League[]> {
 }
 
 export async function getLeagueById(leagueId: string): Promise<League | null> {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from("leagues")
     .select("id, name, country, reputation, tier")
@@ -109,7 +109,7 @@ export async function getLeagueById(leagueId: string): Promise<League | null> {
 }
 
 export async function getClubsByLeague(leagueId: string): Promise<Club[]> {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const { data: clubs, error } = await supabase
     .from("clubs")
     .select("*")
@@ -124,7 +124,7 @@ export async function getClubsByLeague(leagueId: string): Promise<Club[]> {
 }
 
 export async function getClubById(clubId: string): Promise<Club | null> {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from("clubs")
     .select("id, league_id, name, reputation, finances, transfer_budget, wage_budget")
@@ -139,7 +139,7 @@ export async function getClubById(clubId: string): Promise<Club | null> {
 }
 
 export async function getPlayers(limit = 50): Promise<Player[]> {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from("players")
     .select(playerSelect)
@@ -154,7 +154,7 @@ export async function getPlayers(limit = 50): Promise<Player[]> {
 }
 
 export async function getPlayersByLeague(leagueId: string): Promise<Player[]> {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const { data: clubs, error: clubError } = await supabase
     .from("clubs")
     .select("id")
@@ -184,7 +184,7 @@ export async function getPlayersByLeague(leagueId: string): Promise<Player[]> {
 }
 
 export async function getPlayersByClub(clubId: string, limit = 100): Promise<Player[]> {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from("players")
     .select(playerSelect)
@@ -200,7 +200,7 @@ export async function getPlayersByClub(clubId: string, limit = 100): Promise<Pla
 }
 
 export async function searchPlayers(query: string, leagueId?: string): Promise<Player[]> {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const trimmedQuery = query.trim();
 
   if (!trimmedQuery) {

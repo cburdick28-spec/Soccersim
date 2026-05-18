@@ -8,7 +8,6 @@ import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { useAppStore } from "@/stores/useAppStore";
 
 export default function ProfilePage() {
-  const supabase = getSupabase();
   const language = useAppStore((state) => state.language);
   const profile = useAppStore((state) => state.profile);
   const setProfile = useAppStore((state) => state.setProfile);
@@ -40,6 +39,7 @@ export default function ProfilePage() {
 
     const email = usernameToEmail(username);
 
+    const supabase = getSupabase();
     const action =
       mode === "register"
         ? supabase.auth.signUp({ email, password })

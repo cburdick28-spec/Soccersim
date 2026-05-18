@@ -47,7 +47,6 @@ function getBoardObjective(reputation: number) {
 }
 
 export default function ClubSelectPage() {
-  const supabase = getSupabase();
   const router = useRouter();
   const [allLeagues, setAllLeagues] = useState<League[]>([]);
   const [selectedLeagueId, setSelectedLeagueId] = useState<string>("");
@@ -110,6 +109,7 @@ export default function ClubSelectPage() {
       }
 
       try {
+        const supabase = getSupabase();
         const { data, error } = await supabase
           .from("clubs")
           .select("*")
