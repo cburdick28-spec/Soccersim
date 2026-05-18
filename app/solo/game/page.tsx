@@ -181,8 +181,6 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
           <InitializeSeasonForm
             leagueId={selectedLeagueId ?? ""}
             clubId={selectedClubId ?? ""}
-            initStatus={initStatus}
-            initError={initError}
             action={initializeCareerAction}
           />
         </section>

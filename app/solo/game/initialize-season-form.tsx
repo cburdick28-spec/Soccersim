@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
 
 const STAGES = ["Initializing season...", "Generating fixtures...", "Building standings...", "Finalizing season setup..."];
+const STAGE_TRANSITION_MS = 900;
 
 function SeasonInitControls() {
   const { pending } = useFormStatus();
@@ -16,7 +17,7 @@ function SeasonInitControls() {
     }
     const timer = window.setInterval(() => {
       setStageIndex((current) => Math.min(current + 1, STAGES.length - 1));
-    }, 900);
+    }, STAGE_TRANSITION_MS);
     return () => window.clearInterval(timer);
   }, [pending]);
 
@@ -29,7 +30,6 @@ function SeasonInitControls() {
       >
         {pending ? STAGES[stageIndex] : "Initialize Season"}
       </button>
-      {pending && <p className="mt-2 text-xs text-sky-300">{STAGES[stageIndex]}</p>}
     </>
   );
 }
@@ -37,26 +37,17 @@ function SeasonInitControls() {
 export default function InitializeSeasonForm({
   leagueId,
   clubId,
-  initStatus,
-  initError,
   action,
 }: {
   leagueId: string;
   clubId: string;
-  initStatus?: string;
-  initError?: string;
   action: (formData: FormData) => void | Promise<void>;
 }) {
-  const hasSuccess = useMemo(() => initStatus === "success", [initStatus]);
-
   return (
     <form action={action}>
       <input type="hidden" name="leagueId" value={leagueId} />
       <input type="hidden" name="clubId" value={clubId} />
       <SeasonInitControls />
-      {hasSuccess && <p className="mt-2 text-xs text-emerald-300">Season initialized successfully.</p>}
-      {initError && <p className="mt-2 text-xs text-red-300">Initialization failed: {initError}</p>}
     </form>
   );
 }
-

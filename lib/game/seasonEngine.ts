@@ -92,6 +92,7 @@ export type GameState = {
 };
 
 const FIXTURE_BATCH_SIZE = 400;
+const MAX_INITIALIZATION_ATTEMPTS = 3;
 const GOAL_VARIANCE = 0.55;
 const DRAW_BREAK_RATING_GAP_THRESHOLD = 7;
 const DRAW_BREAK_FAVOR_STRONGER_PROBABILITY = 0.62;
@@ -460,9 +461,15 @@ const toFixtureKey = (fixture: {
 }) => `${fixture.home_club_id}:${fixture.away_club_id}:${fixture.season_id}:${fixture.matchday}`;
 
 const expectedFixturesForLeague = (leagueId: string, seasonId: string, clubIds: string[]) =>
-  generateRoundRobinFixtures(leagueId, seasonId, [...clubIds].sort((a, b) => a.localeCompare(b)));
+  generateRoundRobinFixtures(leagueId, seasonId, clubIds);
 
-async function ensureSeasonFixturesComplete(seasonId: string): Promise<{ insertedFixtures: number; expectedFixtures: number }> {
+const formatVerificationFailure = (verification: SeasonInitializationVerification) =>
+  `Season verification failed: missing=${verification.missingArtifacts.join(", ")} fixtures=${verification.actualFixtureCount}/${verification.expectedFixtureCount} standings=${verification.actualStandingsCount}/${verification.expectedStandingsCount}`;
+
+async function ensureSeasonFixturesComplete(
+  seasonId: string,
+  repair = true,
+): Promise<{ insertedFixtures: number; expectedFixtures: number; missingFixtures: number }> {
   const supabase = getSupabase();
   const [{ data: clubs, error: clubsError }, { data: fixtures, error: fixturesError }] = await Promise.all([
     supabase.from("clubs").select("id, league_id"),
@@ -498,7 +505,7 @@ async function ensureSeasonFixturesComplete(seasonId: string): Promise<{ inserte
     if (clubIds.length < 2) {
       return;
     }
-    const expected = expectedFixturesForLeague(leagueId, seasonId, clubIds);
+    const expected = expectedFixturesForLeague(leagueId, seasonId, clubIds.sort((a, b) => a.localeCompare(b)));
     expectedFixtures += expected.length;
     expected.forEach((fixture) => {
       if (!existingFixtureKeys.has(toFixtureKey(fixture))) {
@@ -507,11 +514,11 @@ async function ensureSeasonFixturesComplete(seasonId: string): Promise<{ inserte
     });
   });
 
-  if (missingFixtures.length > 0) {
+  if (repair && missingFixtures.length > 0) {
     await insertFixtures(missingFixtures);
   }
 
-  return { insertedFixtures: missingFixtures.length, expectedFixtures };
+  return { insertedFixtures: repair ? missingFixtures.length : 0, expectedFixtures, missingFixtures: missingFixtures.length };
 }
 
 type IntegrityIssue =
@@ -629,8 +636,8 @@ export async function validateSeasonIntegrity(seasonId: string): Promise<{
     }
   }
 
-  const fixtureRepair = await ensureSeasonFixturesComplete(seasonId);
-  if (fixtureRepair.insertedFixtures > 0) {
+  const fixtureCompleteness = await ensureSeasonFixturesComplete(seasonId, false);
+  if (fixtureCompleteness.missingFixtures > 0) {
     issues.add("missing_fixtures");
   }
 
@@ -734,8 +741,8 @@ export async function verifySeasonInitialization(seasonId: string): Promise<Seas
 }
 
 export async function initializeSeason(): Promise<SeasonRow> {
-  let lastError: unknown = null;
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
+  let lastError: Error = new Error("Season initialization failed.");
+  for (let attempt = 1; attempt <= MAX_INITIALIZATION_ATTEMPTS; attempt += 1) {
     try {
       console.info(`[initializeSeason] attempt=${attempt}: start`);
       await repairClubEconomyAndReputation();
@@ -750,9 +757,7 @@ export async function initializeSeason(): Promise<SeasonRow> {
 
       const verification = await verifySeasonInitialization(season.id);
       if (!verification.ok) {
-        throw new Error(
-          `Season verification failed: missing=${verification.missingArtifacts.join(", ")} fixtures=${verification.actualFixtureCount}/${verification.expectedFixtureCount} standings=${verification.actualStandingsCount}/${verification.expectedStandingsCount}`,
-        );
+        throw new Error(formatVerificationFailure(verification));
       }
 
       console.info(
@@ -760,11 +765,11 @@ export async function initializeSeason(): Promise<SeasonRow> {
       );
       return season;
     } catch (error) {
-      lastError = error;
+      lastError = error instanceof Error ? error : new Error(String(error));
       console.error(`[initializeSeason] attempt=${attempt} failed`, error);
     }
   }
-  throw lastError instanceof Error ? lastError : new Error("Season initialization failed after retries.");
+  throw lastError;
 }
 
 export async function updateLeagueStandings(leagueId: string, seasonId: string): Promise<void> {

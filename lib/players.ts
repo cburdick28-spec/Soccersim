@@ -70,7 +70,7 @@ const toNumber = (value: unknown): number | null => {
   if (typeof value !== "string") {
     return null;
   }
-  const normalized = value.trim().replace(",", ".");
+  const normalized = value.trim().replace(/,/g, ".");
   if (!normalized) {
     return null;
   }
@@ -88,21 +88,27 @@ const getNumeric = (row: RawPlayerRow, keys: string[], fallback: number) => {
   return fallback;
 };
 
+const getRoundedClampedNumeric = (row: RawPlayerRow, keys: string[], fallback: number, min = 1, max = 99) =>
+  clamp(Math.round(getNumeric(row, keys, fallback)), min, max);
+
 const normalizePosition = (position: string | null | undefined) => {
   if (!position) return "";
   return position.trim().toUpperCase();
 };
 
+const positionTokens = (position: string) => position.split(/[^A-Z0-9]+/).filter(Boolean);
+const hasPositionToken = (position: string, token: string) => positionTokens(position).includes(token);
+
 const getPositionProfile = (position: string) => {
-  if (position.includes("GK")) return "GK";
-  if (position.includes("CAM")) return "CAM";
-  if (position.includes("CM") || position.includes("CDM") || position === "MID") return "CM";
+  if (hasPositionToken(position, "GK")) return "GK";
+  if (hasPositionToken(position, "CAM")) return "CAM";
+  if (hasPositionToken(position, "CM") || hasPositionToken(position, "CDM") || position === "MID") return "CM";
   if (
-    position.includes("CB") ||
-    position.includes("LB") ||
-    position.includes("RB") ||
-    position.includes("LWB") ||
-    position.includes("RWB") ||
+    hasPositionToken(position, "CB") ||
+    hasPositionToken(position, "LB") ||
+    hasPositionToken(position, "RB") ||
+    hasPositionToken(position, "LWB") ||
+    hasPositionToken(position, "RWB") ||
     position === "DEF"
   ) {
     return "CB";
@@ -112,7 +118,7 @@ const getPositionProfile = (position: string) => {
 
 const weightedOverall = (row: RawPlayerRow) => {
   const storedOverall = getNumeric(row, ["overall", "ovr"], NaN);
-  if (Number.isFinite(storedOverall) && storedOverall > 0) {
+  if (Number.isFinite(storedOverall) && storedOverall >= 1) {
     return clamp(Math.round(storedOverall), 1, 99);
   }
 
@@ -152,25 +158,25 @@ const toPlayer = (row: RawPlayerRow): Player => {
     ? (leagueValue[0]?.name ?? null)
     : (leagueValue?.name ?? null);
 
-  const pace = clamp(Math.round(getNumeric(row, ["pace", "acceleration", "speed"], 50)), 1, 99);
-  const shooting = clamp(Math.round(getNumeric(row, ["shooting", "finishing"], 50)), 1, 99);
-  const passing = clamp(Math.round(getNumeric(row, ["passing"], 50)), 1, 99);
-  const dribbling = clamp(Math.round(getNumeric(row, ["dribbling"], 50)), 1, 99);
-  const defending = clamp(Math.round(getNumeric(row, ["defending"], 50)), 1, 99);
-  const physical = clamp(Math.round(getNumeric(row, ["physical", "physic", "strength"], 50)), 1, 99);
+  const pace = getRoundedClampedNumeric(row, ["pace", "acceleration", "speed"], 50);
+  const shooting = getRoundedClampedNumeric(row, ["shooting", "finishing"], 50);
+  const passing = getRoundedClampedNumeric(row, ["passing"], 50);
+  const dribbling = getRoundedClampedNumeric(row, ["dribbling"], 50);
+  const defending = getRoundedClampedNumeric(row, ["defending"], 50);
+  const physical = getRoundedClampedNumeric(row, ["physical", "physic", "strength"], 50);
 
   const overall = weightedOverall(row);
-  const potential = clamp(Math.round(getNumeric(row, ["potential"], overall)), 1, 99);
-  const age = clamp(Math.round(getNumeric(row, ["age"], 24)), 15, 50);
-  const morale = clamp(Math.round(getNumeric(row, ["morale"], 70)), 1, 99);
-  const fitness = clamp(Math.round(getNumeric(row, ["fitness"], 90)), 1, 99);
-  const form = clamp(Math.round(getNumeric(row, ["form"], 50)), 1, 99);
+  const potential = getRoundedClampedNumeric(row, ["potential"], overall);
+  const age = getRoundedClampedNumeric(row, ["age"], 24, 15, 50);
+  const morale = getRoundedClampedNumeric(row, ["morale"], 70);
+  const fitness = getRoundedClampedNumeric(row, ["fitness"], 90);
+  const form = getRoundedClampedNumeric(row, ["form"], 50);
 
   return {
     id: row.id,
-    name: (row.name ?? "Unknown Player").toString(),
+    name: row.name ?? "Unknown Player",
     age,
-    nationality: (row.nationality ?? "Unknown").toString(),
+    nationality: row.nationality ?? "Unknown",
     preferred_position: normalizePosition(row.preferred_position) || "ST",
     potential,
     morale,
