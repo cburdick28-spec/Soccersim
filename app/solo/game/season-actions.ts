@@ -11,19 +11,36 @@ const getRequired = (value: FormDataEntryValue | null, field: string) => {
   return normalized;
 };
 
-const toGamePath = (leagueId: string, clubId: string) =>
-  `/solo/game?leagueId=${encodeURIComponent(leagueId)}&clubId=${encodeURIComponent(clubId)}`;
+const toGamePath = (leagueId: string, clubId: string, status?: { initStatus?: string; initError?: string }) => {
+  const params = new URLSearchParams({
+    leagueId,
+    clubId,
+  });
+  if (status?.initStatus) {
+    params.set("initStatus", status.initStatus);
+  }
+  if (status?.initError) {
+    params.set("initError", status.initError);
+  }
+  return `/solo/game?${params.toString()}`;
+};
+// Keep URL query payload short and readable while preserving useful context.
+const MAX_INITIALIZATION_ERROR_LENGTH = 240;
 
 export async function initializeCareerAction(formData: FormData) {
   const leagueId = getRequired(formData.get("leagueId"), "league");
   const clubId = getRequired(formData.get("clubId"), "club");
   try {
+    console.info("[initializeCareerAction] Initializing season...");
     const season = await initializeSeason();
-    await runMatchday(season.id, leagueId, clubId);
+    console.info(`[initializeCareerAction] Season ready season=${season.id}`);
+    redirect(toGamePath(leagueId, clubId, { initStatus: "success" }));
   } catch (err) {
-    console.error("[initializeCareerAction] Season initialization failed:", err);
+    console.error("[Initialize Season Failed]");
+    console.error(err);
+    const message = err instanceof Error ? err.message : "Unknown initialization failure";
+    redirect(toGamePath(leagueId, clubId, { initError: message.slice(0, MAX_INITIALIZATION_ERROR_LENGTH) }));
   }
-  redirect(toGamePath(leagueId, clubId));
 }
 
 export async function quickSimUpcomingFixtureAction(formData: FormData) {

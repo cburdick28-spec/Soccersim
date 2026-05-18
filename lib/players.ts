@@ -21,30 +21,136 @@ export type Club = {
 
 type RawPlayerRow = {
   id: string;
-  name: string;
-  age: number;
-  nationality: string;
-  preferred_position: string;
-  potential: number;
-  morale: number;
-  fitness: number;
-  form: number;
-  pace: number;
-  shooting: number;
-  passing: number;
-  dribbling: number;
-  defending: number;
-  physical: number;
+  name: string | null;
+  age: number | string | null;
+  nationality: string | null;
+  preferred_position: string | null;
+  potential: number | string | null;
+  morale: number | string | null;
+  fitness: number | string | null;
+  form: number | string | null;
+  pace: number | string | null;
+  shooting: number | string | null;
+  passing: number | string | null;
+  dribbling: number | string | null;
+  defending: number | string | null;
+  physical: number | string | null;
+  overall?: number | string | null;
+  ovr?: number | string | null;
+  goalkeeper_diving?: number | string | null;
+  goalkeeper_handling?: number | string | null;
+  goalkeeper_reflexes?: number | string | null;
+  goalkeeper_positioning?: number | string | null;
+  gk_diving?: number | string | null;
+  gk_handling?: number | string | null;
+  gk_reflexes?: number | string | null;
+  gk_positioning?: number | string | null;
+  diving?: number | string | null;
+  handling?: number | string | null;
+  reflexes?: number | string | null;
+  positioning?: number | string | null;
   club_id: string | null;
   clubs: null | {
     name: string | null;
     league_id: string | null;
     leagues: null | { name: string | null } | Array<{ name: string | null }>;
   };
+  [key: string]: unknown;
 };
 
 const playerSelect =
-  "id, name, age, nationality, preferred_position, potential, morale, fitness, form, pace, shooting, passing, dribbling, defending, physical, club_id, clubs(name, league_id, leagues(name))";
+  "*, clubs(name, league_id, leagues(name))";
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+const toNumber = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim().replace(/,/g, ".");
+  if (!normalized) {
+    return null;
+  }
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const getNumeric = (row: RawPlayerRow, keys: string[], fallback: number) => {
+  for (const key of keys) {
+    const parsed = toNumber(row[key]);
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+  return fallback;
+};
+
+const getRoundedClampedNumeric = (row: RawPlayerRow, keys: string[], fallback: number, min = 1, max = 99) =>
+  clamp(Math.round(getNumeric(row, keys, fallback)), min, max);
+
+const normalizePosition = (position: string | null | undefined) => {
+  if (!position) return "";
+  return position.trim().toUpperCase();
+};
+
+const positionTokens = (position: string) => position.split(/[^A-Z0-9]+/).filter(Boolean);
+const hasPositionToken = (position: string, token: string) => positionTokens(position).includes(token);
+
+const getPositionProfile = (position: string) => {
+  if (hasPositionToken(position, "GK")) return "GK";
+  if (hasPositionToken(position, "CAM")) return "CAM";
+  if (hasPositionToken(position, "CM") || hasPositionToken(position, "CDM") || position === "MID") return "CM";
+  if (
+    hasPositionToken(position, "CB") ||
+    hasPositionToken(position, "LB") ||
+    hasPositionToken(position, "RB") ||
+    hasPositionToken(position, "LWB") ||
+    hasPositionToken(position, "RWB") ||
+    position === "DEF"
+  ) {
+    return "CB";
+  }
+  return "ST";
+};
+
+const weightedOverall = (row: RawPlayerRow) => {
+  const storedOverall = getNumeric(row, ["overall", "ovr"], NaN);
+  if (Number.isFinite(storedOverall) && storedOverall >= 1) {
+    return clamp(Math.round(storedOverall), 1, 99);
+  }
+
+  const pace = getNumeric(row, ["pace", "acceleration", "speed"], 50);
+  const shooting = getNumeric(row, ["shooting", "finishing"], 50);
+  const passing = getNumeric(row, ["passing"], 50);
+  const dribbling = getNumeric(row, ["dribbling"], 50);
+  const defending = getNumeric(row, ["defending"], 50);
+  const physical = getNumeric(row, ["physical", "physic", "strength"], 50);
+
+  const diving = getNumeric(row, ["goalkeeper_diving", "gk_diving", "diving"], defending);
+  const handling = getNumeric(row, ["goalkeeper_handling", "gk_handling", "handling"], physical);
+  const reflexes = getNumeric(row, ["goalkeeper_reflexes", "gk_reflexes", "reflexes"], defending);
+  const positioning = getNumeric(row, ["goalkeeper_positioning", "gk_positioning", "positioning"], defending);
+
+  const positionProfile = getPositionProfile(normalizePosition(row.preferred_position));
+  let overall = 0;
+
+  if (positionProfile === "GK") {
+    overall = diving * 0.28 + handling * 0.24 + reflexes * 0.28 + positioning * 0.2;
+  } else if (positionProfile === "CAM") {
+    overall = passing * 0.4 + dribbling * 0.35 + shooting * 0.25;
+  } else if (positionProfile === "CM") {
+    overall = passing * 0.4 + defending * 0.3 + physical * 0.3;
+  } else if (positionProfile === "CB") {
+    overall = defending * 0.45 + physical * 0.35 + pace * 0.2;
+  } else {
+    overall = pace * 0.34 + shooting * 0.44 + dribbling * 0.22;
+  }
+
+  return clamp(Math.round(overall), 1, 99);
+};
 
 const toPlayer = (row: RawPlayerRow): Player => {
   const leagueValue = row.clubs?.leagues;
@@ -52,26 +158,36 @@ const toPlayer = (row: RawPlayerRow): Player => {
     ? (leagueValue[0]?.name ?? null)
     : (leagueValue?.name ?? null);
 
-  const overall = Math.round(
-    (row.pace + row.shooting + row.passing + row.dribbling + row.defending + row.physical) / 6,
-  );
+  const pace = getRoundedClampedNumeric(row, ["pace", "acceleration", "speed"], 50);
+  const shooting = getRoundedClampedNumeric(row, ["shooting", "finishing"], 50);
+  const passing = getRoundedClampedNumeric(row, ["passing"], 50);
+  const dribbling = getRoundedClampedNumeric(row, ["dribbling"], 50);
+  const defending = getRoundedClampedNumeric(row, ["defending"], 50);
+  const physical = getRoundedClampedNumeric(row, ["physical", "physic", "strength"], 50);
+
+  const overall = weightedOverall(row);
+  const potential = getRoundedClampedNumeric(row, ["potential"], overall);
+  const age = getRoundedClampedNumeric(row, ["age"], 24, 15, 50);
+  const morale = getRoundedClampedNumeric(row, ["morale"], 70);
+  const fitness = getRoundedClampedNumeric(row, ["fitness"], 90);
+  const form = getRoundedClampedNumeric(row, ["form"], 50);
 
   return {
     id: row.id,
-    name: row.name,
-    age: row.age,
-    nationality: row.nationality,
-    preferred_position: row.preferred_position,
-    potential: row.potential,
-    morale: row.morale,
-    fitness: row.fitness,
-    form: row.form,
-    pace: row.pace,
-    shooting: row.shooting,
-    passing: row.passing,
-    dribbling: row.dribbling,
-    defending: row.defending,
-    physical: row.physical,
+    name: row.name ?? "Unknown Player",
+    age,
+    nationality: row.nationality ?? "Unknown",
+    preferred_position: normalizePosition(row.preferred_position) || "ST",
+    potential,
+    morale,
+    fitness,
+    form,
+    pace,
+    shooting,
+    passing,
+    dribbling,
+    defending,
+    physical,
     club_id: row.club_id,
     club_name: row.clubs?.name ?? null,
     league_name: leagueName,
