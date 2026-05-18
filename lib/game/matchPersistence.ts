@@ -1,4 +1,4 @@
-import { getSupabaseClient } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase/client";
 import { runMatchday, updateLeagueStandings } from "@/lib/game/seasonEngine";
 import type { MatchState } from "@/lib/matchSimulator";
 import type { Player } from "@/types/player";
@@ -21,7 +21,7 @@ const MIN_FITNESS_DROP = 8;
 const FITNESS_DROP_VARIANCE = 5;
 
 async function getCurrentSeasonId(): Promise<string> {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from("seasons")
     .select("id")
@@ -39,7 +39,7 @@ async function getCurrentSeasonId(): Promise<string> {
 }
 
 async function calculateRecentForm(clubId: string, seasonId: string, leagueId: string): Promise<number> {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from("matches")
     .select("home_club_id, away_club_id, home_goals, away_goals")
@@ -92,7 +92,7 @@ async function updatePlayerMoraleAndForm(
   seasonId: string,
   leagueId: string,
 ): Promise<void> {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const moraleDelta = didWin ? 5 : didDraw ? 0 : -5;
   const formValue = await calculateRecentForm(clubId, seasonId, leagueId);
 
@@ -115,7 +115,7 @@ async function updatePlayerMoraleAndForm(
 }
 
 export async function persistMatchAndProgress(input: PersistMatchInput): Promise<void> {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const seasonId = await getCurrentSeasonId();
   const {
     fixtureId,

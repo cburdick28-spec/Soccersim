@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { persistMatchAndProgress } from "@/lib/game/matchPersistence";
+import { persistLiveMatchAction } from "./actions";
 import { getClubById, getPlayersByClub } from "@/lib/players";
 import {
   buildMatchOutput,
@@ -90,7 +90,7 @@ function LiveMatchContent() {
     setIsSaving(true);
     setSaveError(null);
 
-    void persistMatchAndProgress({
+    void persistLiveMatchAction({
       fixtureId,
       leagueId,
       userClubId,

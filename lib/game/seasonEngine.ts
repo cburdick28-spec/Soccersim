@@ -1,4 +1,4 @@
-import { getSupabaseClient } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase/client";
 
 type SeasonStatus = "active" | "processing" | "completed";
 type MatchStatus = "scheduled" | "in_progress" | "completed";
@@ -112,7 +112,7 @@ const setGameState = (state: GameState) => {
 const getGameStateStatus = (seasonId: string): GameLoopStatus => gameStateBySeasonId.get(seasonId)?.status ?? "idle";
 
 export async function getActiveSeason(): Promise<SeasonRow | null> {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from("seasons")
     .select("id, label, current_matchday, status")
@@ -129,7 +129,7 @@ export async function getActiveSeason(): Promise<SeasonRow | null> {
 }
 
 async function createSeason(): Promise<SeasonRow> {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const baseLabel = createSeasonLabel();
 
   for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -216,7 +216,7 @@ const getFinanceRange = (reputation: number) => {
 };
 
 async function repairClubEconomyAndReputation() {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const [{ data: leagues, error: leaguesError }, { data: clubs, error: clubsError }] = await Promise.all([
     supabase.from("leagues").select("id, tier, reputation"),
     supabase.from("clubs").select("id, league_id, name, reputation"),
@@ -294,7 +294,7 @@ async function repairClubEconomyAndReputation() {
 }
 
 export async function seasonAlreadyInitialized(seasonId: string): Promise<boolean> {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from("matches")
     .select("id")
@@ -385,7 +385,7 @@ export function generateRoundRobinFixtures(leagueId: string, seasonId: string, c
 }
 
 async function ensureStandingsRows(seasonId: string): Promise<void> {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const { data: clubs, error: clubsError } = await supabase
     .from("clubs")
     .select("id, league_id, name")
@@ -426,7 +426,7 @@ async function insertFixtures(fixtures: FixtureInsert[]): Promise<void> {
     return;
   }
 
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   for (let i = 0; i < fixtures.length; i += FIXTURE_BATCH_SIZE) {
     const chunk = fixtures.slice(i, i + FIXTURE_BATCH_SIZE);
     const { error } = await supabase
@@ -454,7 +454,7 @@ export async function validateSeasonIntegrity(seasonId: string): Promise<{
   ok: boolean;
   detectedIssues: IntegrityIssue[];
 }> {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const issues = new Set<IntegrityIssue>();
 
   const [{ data: leagues, error: leaguesError }, { data: clubs, error: clubsError }] = await Promise.all([
@@ -590,7 +590,7 @@ export async function validateSeasonIntegrity(seasonId: string): Promise<{
 }
 
 export async function initializeSeason(): Promise<SeasonRow> {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   await repairClubEconomyAndReputation();
   const season = await getOrCreateActiveSeason();
   await ensureStandingsRows(season.id);
@@ -627,7 +627,7 @@ export async function initializeSeason(): Promise<SeasonRow> {
 }
 
 export async function updateLeagueStandings(leagueId: string, seasonId: string): Promise<void> {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const [{ data: clubs, error: clubsError }, { data: matches, error: matchesError }] = await Promise.all([
     supabase.from("clubs").select("id, name").eq("league_id", leagueId),
     supabase
@@ -800,7 +800,7 @@ function simulateFixture(contextHome: ClubSimulationContext, contextAway: ClubSi
 }
 
 async function buildClubSimulationContext(fixtures: Array<{ home_club_id: string; away_club_id: string }>) {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const clubIds = [...new Set(fixtures.flatMap((fixture) => [fixture.home_club_id, fixture.away_club_id]))];
   if (clubIds.length === 0) {
     return new Map<string, ClubSimulationContext>();
@@ -865,7 +865,7 @@ async function completeFixture(params: {
   fixtureId: string;
   result: { homeGoals: number; awayGoals: number; xgHome: number; xgAway: number; possessionHome: number; commentary: string[] };
 }): Promise<boolean> {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const { fixtureId, result } = params;
 
   const { data, error } = await supabase
@@ -896,7 +896,7 @@ export async function simulateOtherLeagueMatches(
   matchday: number,
   excludeFixtureIds: string[] = [],
 ): Promise<number> {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const { data: fixtures, error: fixturesError } = await supabase
     .from("matches")
     .select("id, home_club_id, away_club_id, league_id")
@@ -944,7 +944,7 @@ export async function simulateOtherLeagueMatches(
 }
 
 export async function getUpcomingFixturesForClub(clubId: string, seasonId?: string) {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const season = seasonId
     ? (
         (
@@ -988,7 +988,7 @@ export async function getUpcomingFixturesForClub(clubId: string, seasonId?: stri
 }
 
 export async function getLeagueTable(leagueId: string, seasonId: string): Promise<LeagueTableRow[]> {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const [{ data: standings, error: standingsError }, { data: clubs, error: clubsError }] = await Promise.all([
     supabase
       .from("standings")
@@ -1031,7 +1031,7 @@ export async function quickSimUserFixture(params: {
   leagueId: string;
   fixtureId: string;
 }): Promise<boolean> {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from("matches")
     .select("id, status, home_club_id, away_club_id, season_id, league_id")
@@ -1074,7 +1074,7 @@ export async function quickSimUserFixture(params: {
 }
 
 async function updateSeasonStatus(seasonId: string, fromStatus: SeasonStatus, toStatus: SeasonStatus) {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const { error } = await supabase
     .from("seasons")
     .update({ status: toStatus } as never)
@@ -1090,7 +1090,7 @@ export async function runMatchday(
   leagueId: string,
   userClubId: string,
 ): Promise<{ progressed: boolean; requiresUserMatch: boolean; season: SeasonRow; gameState: GameState; userFixtureId: string | null }> {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const { data: seasonData, error: seasonError } = await supabase
     .from("seasons")
     .select("id, label, current_matchday, status")
@@ -1368,7 +1368,7 @@ export async function advanceMatchday(params: {
   userFixtureId?: string;
   quickSimUserMatch?: boolean;
 }): Promise<{ progressed: boolean; requiresUserMatch: boolean; season: SeasonRow }> {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const season = params.seasonId
     ? (
         (
@@ -1444,7 +1444,7 @@ export async function advanceMatchday(params: {
 }
 
 export async function getRecentLeagueResults(leagueId: string, seasonId: string, limit = 10) {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from("matches")
     .select("id, home_club_id, away_club_id, home_goals, away_goals, matchday, played_at, status")
