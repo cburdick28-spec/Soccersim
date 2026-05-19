@@ -130,11 +130,6 @@ const getPositionProfile = (position: string) => {
 };
 
 const weightedOverall = (row: RawPlayerRow) => {
-  const storedOverall = getNumeric(row, ["overall", "ovr", "overall_rating", "base_rating", "player_overall"], NaN);
-  if (Number.isFinite(storedOverall) && storedOverall >= 1) {
-    return clamp(Math.round(storedOverall), 1, 99);
-  }
-
   const positionProfile = getPositionProfile(normalizePosition(row.preferred_position));
   if (positionProfile === "GK") {
     const diving = getFirstNumeric(row, [
@@ -143,7 +138,6 @@ const weightedOverall = (row: RawPlayerRow) => {
       "goalkeeping_diving",
       "goalkeeperDiving",
       "gkDiving",
-      "diving",
     ]);
     const handling = getFirstNumeric(row, [
       "goalkeeper_handling",
@@ -151,7 +145,6 @@ const weightedOverall = (row: RawPlayerRow) => {
       "goalkeeping_handling",
       "goalkeeperHandling",
       "gkHandling",
-      "handling",
     ]);
     const kicking = getFirstNumeric(row, [
       "goalkeeper_kicking",
@@ -159,7 +152,6 @@ const weightedOverall = (row: RawPlayerRow) => {
       "goalkeeping_kicking",
       "goalkeeperKicking",
       "gkKicking",
-      "kicking",
     ]);
     const reflexes = getFirstNumeric(row, [
       "goalkeeper_reflexes",
@@ -167,7 +159,6 @@ const weightedOverall = (row: RawPlayerRow) => {
       "goalkeeping_reflexes",
       "goalkeeperReflexes",
       "gkReflexes",
-      "reflexes",
     ]);
     const positioning = getFirstNumeric(row, [
       "goalkeeper_positioning",
@@ -175,13 +166,13 @@ const weightedOverall = (row: RawPlayerRow) => {
       "goalkeeping_positioning",
       "goalkeeperPositioning",
       "gkPositioning",
-      "positioning",
     ]);
 
     console.log({
-      name: row.name ?? "Unknown Player",
+      player: row.name ?? "Unknown Player",
       diving,
       handling,
+      kicking,
       reflexes,
       positioning,
     });
@@ -192,12 +183,17 @@ const weightedOverall = (row: RawPlayerRow) => {
     const safeReflexes = reflexes ?? DEFAULT_GK_ATTRIBUTE_VALUE;
     const safePositioning = positioning ?? DEFAULT_GK_ATTRIBUTE_VALUE;
     const overall =
-      safeDiving * 0.24 +
+      safeDiving * 0.22 +
+      safeReflexes * 0.22 +
       safeHandling * 0.2 +
-      safeKicking * 0.12 +
-      safeReflexes * 0.28 +
-      safePositioning * 0.16;
+      safePositioning * 0.2 +
+      safeKicking * 0.16;
     return clamp(Math.round(overall), 1, 99);
+  }
+
+  const storedOverall = getNumeric(row, ["overall", "ovr", "overall_rating", "base_rating", "player_overall"], NaN);
+  if (Number.isFinite(storedOverall) && storedOverall >= 1) {
+    return clamp(Math.round(storedOverall), 1, 99);
   }
 
   const pace = getNumeric(row, ["pace", "acceleration", "speed"], 50);

@@ -32,6 +32,7 @@ type FixtureInsert = {
   away_club_id: string;
   matchday: number;
   status: MatchStatus;
+  played?: boolean;
 };
 
 type SimPlayer = {
@@ -121,6 +122,7 @@ const average = (values: number[]) =>
 
 const gameStateBySeasonId = new Map<string, GameState>();
 const matchdayLocks = new Set<string>();
+let matchesSupportsPlayedFlag: boolean | null = null;
 const seasonRowSelect = gameplayColumns("seasons", ["id", "current_matchday", "status", "completed", "created_at"] as const);
 const seasonStatusSelect = gameplayColumns("seasons", ["id", "status", "completed"] as const);
 const activeSeasonStatusSet = new Set<string>(ACTIVE_SEASON_STATUS_VALUES);
@@ -133,6 +135,16 @@ const setGameState = (state: GameState) => {
 const getGameStateStatus = (seasonId: string): GameLoopStatus => gameStateBySeasonId.get(seasonId)?.status ?? "idle";
 const isActiveSeasonStatus = (status: SeasonStatus | null): status is (typeof ACTIVE_SEASON_STATUS_VALUES)[number] =>
   status !== null && activeSeasonStatusSet.has(status);
+
+async function hasMatchesPlayedFlagColumn() {
+  if (matchesSupportsPlayedFlag !== null) {
+    return matchesSupportsPlayedFlag;
+  }
+  const supabase = getSupabase();
+  const { error } = await supabase.from("matches").select("played", { head: true }).limit(1);
+  matchesSupportsPlayedFlag = !error;
+  return matchesSupportsPlayedFlag;
+}
 
 export async function getActiveSeason(): Promise<SeasonRow | null> {
   await assertGameplaySchemaReady("getActiveSeason");
@@ -480,11 +492,13 @@ async function insertFixtures(fixtures: FixtureInsert[]): Promise<void> {
   }
 
   const supabase = getSupabase();
+  const includePlayedFlag = await hasMatchesPlayedFlagColumn();
   for (let i = 0; i < fixtures.length; i += FIXTURE_BATCH_SIZE) {
     const chunk = fixtures.slice(i, i + FIXTURE_BATCH_SIZE);
+    const payload = includePlayedFlag ? chunk.map((fixture) => ({ ...fixture, played: false })) : chunk;
     const { error } = await supabase
       .from("matches")
-      .upsert(chunk as never, {
+      .upsert(payload as never, {
         onConflict: "home_club_id,away_club_id,season_id,matchday",
         ignoreDuplicates: true,
       });
@@ -1059,19 +1073,24 @@ async function completeFixture(params: {
 }): Promise<boolean> {
   const supabase = getSupabase();
   const { fixtureId, result } = params;
+  const includePlayedFlag = await hasMatchesPlayedFlagColumn();
+  const updates: Record<string, unknown> = {
+    home_goals: result.homeGoals,
+    away_goals: result.awayGoals,
+    xg_home: result.xgHome,
+    xg_away: result.xgAway,
+    possession_home: result.possessionHome,
+    status: "completed",
+    commentary: result.commentary,
+    played_at: new Date().toISOString(),
+  };
+  if (includePlayedFlag) {
+    updates.played = true;
+  }
 
   const { data, error } = await supabase
     .from("matches")
-    .update({
-      home_goals: result.homeGoals,
-      away_goals: result.awayGoals,
-      xg_home: result.xgHome,
-      xg_away: result.xgAway,
-      possession_home: result.possessionHome,
-      status: "completed",
-      commentary: result.commentary,
-      played_at: new Date().toISOString(),
-    } as never)
+    .update(updates as never)
     .eq("id", fixtureId)
     .eq("status", "scheduled")
     .select("id");
@@ -1153,15 +1172,17 @@ export async function getUpcomingFixturesForClub(clubId: string, seasonId?: stri
     return null;
   }
 
-  const { data: fixtures, error } = await supabase
+  const includePlayedFlag = await hasMatchesPlayedFlagColumn();
+  const baseQuery = supabase
     .from("matches")
     .select("id, league_id, season_id, home_club_id, away_club_id, matchday, status")
     .eq("season_id", season.id)
-    .gte("matchday", season.current_matchday)
-    .in("status", ["scheduled", "in_progress"])
     .or(`home_club_id.eq.${clubId},away_club_id.eq.${clubId}`)
     .order("matchday", { ascending: true })
     .limit(1);
+  const { data: fixtures, error } = includePlayedFlag
+    ? await baseQuery.eq("played", false)
+    : await baseQuery.in("status", ["scheduled", "in_progress"]);
 
   if (error) {
     throw new Error(`Failed to fetch upcoming fixture: ${error.message}`);
