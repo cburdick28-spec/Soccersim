@@ -33,6 +33,7 @@ type FixtureInsert = {
   matchday: number;
   status: MatchStatus;
   played?: boolean;
+  simulated?: boolean;
 };
 
 type SimPlayer = {
@@ -123,6 +124,7 @@ const average = (values: number[]) =>
 const gameStateBySeasonId = new Map<string, GameState>();
 const matchdayLocks = new Set<string>();
 let matchesSupportsPlayedFlag: boolean | null = null;
+let matchesSupportsSimulatedFlag: boolean | null = null;
 const seasonRowSelect = gameplayColumns("seasons", ["id", "current_matchday", "status", "completed", "created_at"] as const);
 const seasonStatusSelect = gameplayColumns("seasons", ["id", "status", "completed"] as const);
 const activeSeasonStatusSet = new Set<string>(ACTIVE_SEASON_STATUS_VALUES);
@@ -144,6 +146,16 @@ async function hasMatchesPlayedFlagColumn() {
   const { error } = await supabase.from("matches").select("played", { head: true }).limit(1);
   matchesSupportsPlayedFlag = !error;
   return matchesSupportsPlayedFlag;
+}
+
+async function hasMatchesSimulatedFlagColumn() {
+  if (matchesSupportsSimulatedFlag !== null) {
+    return matchesSupportsSimulatedFlag;
+  }
+  const supabase = getSupabase();
+  const { error } = await supabase.from("matches").select("simulated", { head: true }).limit(1);
+  matchesSupportsSimulatedFlag = !error;
+  return matchesSupportsSimulatedFlag;
 }
 
 export async function getActiveSeason(): Promise<SeasonRow | null> {
@@ -493,9 +505,19 @@ async function insertFixtures(fixtures: FixtureInsert[]): Promise<void> {
 
   const supabase = getSupabase();
   const includePlayedFlag = await hasMatchesPlayedFlagColumn();
+  const includeSimulatedFlag = await hasMatchesSimulatedFlagColumn();
   for (let i = 0; i < fixtures.length; i += FIXTURE_BATCH_SIZE) {
     const chunk = fixtures.slice(i, i + FIXTURE_BATCH_SIZE);
-    const payload = includePlayedFlag ? chunk.map((fixture) => ({ ...fixture, played: false })) : chunk;
+    const payload = chunk.map((fixture) => {
+      const next = { ...fixture };
+      if (includePlayedFlag) {
+        next.played = false;
+      }
+      if (includeSimulatedFlag) {
+        next.simulated = false;
+      }
+      return next;
+    });
     const { error } = await supabase
       .from("matches")
       .upsert(payload as never, {
@@ -504,6 +526,60 @@ async function insertFixtures(fixtures: FixtureInsert[]): Promise<void> {
       });
     if (error) {
       throw new Error(`Failed to insert fixtures: ${error.message}`);
+    }
+  }
+}
+
+async function normalizeSeasonFixtureFlags(seasonId: string): Promise<void> {
+  const supabase = getSupabase();
+  const [includePlayedFlag, includeSimulatedFlag] = await Promise.all([
+    hasMatchesPlayedFlagColumn(),
+    hasMatchesSimulatedFlagColumn(),
+  ]);
+
+  if (!includePlayedFlag && !includeSimulatedFlag) {
+    return;
+  }
+
+  if (includePlayedFlag) {
+    const { error: nullPlayedError } = await supabase
+      .from("matches")
+      .update({ played: false } as never)
+      .eq("season_id", seasonId)
+      .neq("status", "completed")
+      .is("played", null);
+    if (nullPlayedError) {
+      throw new Error(`Failed to normalize played flag (null): ${nullPlayedError.message}`);
+    }
+    const { error: truePlayedError } = await supabase
+      .from("matches")
+      .update({ played: false } as never)
+      .eq("season_id", seasonId)
+      .neq("status", "completed")
+      .eq("played", true);
+    if (truePlayedError) {
+      throw new Error(`Failed to normalize played flag (true): ${truePlayedError.message}`);
+    }
+  }
+
+  if (includeSimulatedFlag) {
+    const { error: nullSimulatedError } = await supabase
+      .from("matches")
+      .update({ simulated: false } as never)
+      .eq("season_id", seasonId)
+      .neq("status", "completed")
+      .is("simulated", null);
+    if (nullSimulatedError) {
+      throw new Error(`Failed to normalize simulated flag (null): ${nullSimulatedError.message}`);
+    }
+    const { error: trueSimulatedError } = await supabase
+      .from("matches")
+      .update({ simulated: false } as never)
+      .eq("season_id", seasonId)
+      .neq("status", "completed")
+      .eq("simulated", true);
+    if (trueSimulatedError) {
+      throw new Error(`Failed to normalize simulated flag (true): ${trueSimulatedError.message}`);
     }
   }
 }
@@ -808,6 +884,7 @@ export async function initializeSeason(): Promise<SeasonRow> {
       const season = await getOrCreateActiveSeason();
       await ensureStandingsRows(season.id);
       await ensureSeasonFixturesComplete(season.id);
+      await normalizeSeasonFixtureFlags(season.id);
 
       const integrity = await validateSeasonIntegrity(season.id);
       if (!integrity.ok) {
@@ -1173,35 +1250,7 @@ export async function getUpcomingFixturesForClub(clubId: string, seasonId?: stri
   }
 
   const includePlayedFlag = await hasMatchesPlayedFlagColumn();
-  const filteredUpcomingQuery = supabase
-    .from("matches")
-    .select("id, league_id, season_id, home_club_id, away_club_id, matchday, status")
-    .eq("season_id", season.id)
-    .gte("matchday", season.current_matchday)
-    .or(`home_club_id.eq.${clubId},away_club_id.eq.${clubId}`)
-    .order("matchday", { ascending: true })
-    .limit(1);
-  const { data: filteredFixtures, error: filteredError } = includePlayedFlag
-    ? await filteredUpcomingQuery.eq("played", false)
-    : await filteredUpcomingQuery.in("status", ["scheduled", "in_progress"]);
-  if (filteredError) {
-    throw new Error(`Failed to fetch upcoming fixture: ${filteredError.message}`);
-  }
-  if ((filteredFixtures ?? []).length > 0) {
-    return ((filteredFixtures ?? [])[0] as
-      | {
-          id: string;
-          league_id: string;
-          season_id: string;
-          home_club_id: string;
-          away_club_id: string;
-          matchday: number;
-          status: MatchStatus;
-        }
-      | undefined) ?? null;
-  }
-
-  const fallbackUpcomingQuery = supabase
+  const upcomingQuery = supabase
     .from("matches")
     .select("id, league_id, season_id, home_club_id, away_club_id, matchday, status")
     .eq("season_id", season.id)
@@ -1209,8 +1258,8 @@ export async function getUpcomingFixturesForClub(clubId: string, seasonId?: stri
     .order("matchday", { ascending: true })
     .limit(1);
   const { data: fixtures, error } = includePlayedFlag
-    ? await fallbackUpcomingQuery.eq("played", false)
-    : await fallbackUpcomingQuery.in("status", ["scheduled", "in_progress"]);
+    ? await upcomingQuery.eq("played", false)
+    : await upcomingQuery.in("status", ["scheduled", "in_progress"]);
 
   if (error) {
     throw new Error(`Failed to fetch upcoming fixture: ${error.message}`);
@@ -1227,6 +1276,33 @@ export async function getUpcomingFixturesForClub(clubId: string, seasonId?: stri
         status: MatchStatus;
       }
     | undefined) ?? null;
+}
+
+export async function getLeagueFixturesForMatchday(leagueId: string, seasonId: string, matchday: number) {
+  await assertGameplaySchemaReady("getLeagueFixturesForMatchday");
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from("matches")
+    .select("id, home_club_id, away_club_id, home_goals, away_goals, matchday, status")
+    .eq("league_id", leagueId)
+    .eq("season_id", seasonId)
+    .eq("matchday", matchday)
+    .order("id", { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to fetch league fixtures for matchday: ${error.message}`);
+  }
+
+  return (data ??
+    []) as Array<{
+    id: string;
+    home_club_id: string;
+    away_club_id: string;
+    home_goals: number | null;
+    away_goals: number | null;
+    matchday: number;
+    status: MatchStatus;
+  }>;
 }
 
 export async function getLeagueTable(leagueId: string, seasonId: string): Promise<LeagueTableRow[]> {

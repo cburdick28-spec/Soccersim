@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
   getActiveSeason,
+  getLeagueFixturesForMatchday,
   getLeagueTable,
   getRecentLeagueResults,
   getUpcomingFixturesForClub,
@@ -36,6 +37,16 @@ type RecentResult = {
   played_at: string;
 };
 
+type MatchdayFixture = {
+  id: string;
+  home_club_id: string;
+  away_club_id: string;
+  home_goals: number | null;
+  away_goals: number | null;
+  matchday: number;
+  status: "scheduled" | "in_progress" | "completed";
+};
+
 export default async function SoloGamePage({ searchParams }: SoloGamePageProps) {
   const { clubId, leagueId, initStatus, initError } = await searchParams;
   const selectedClubId = clubId?.trim();
@@ -49,6 +60,7 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
   let upcomingFixture: UpcomingFixture = null;
   let leagueTable: LeagueTableRow[] = [];
   let recentResults: RecentResult[] = [];
+  let matchdayFixtures: MatchdayFixture[] = [];
   let pageLoadError = false;
 
   try {
@@ -71,7 +83,7 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
     }
 
     try {
-      [upcomingFixture, leagueTable, recentResults] = await Promise.all([
+      [upcomingFixture, leagueTable, recentResults, matchdayFixtures] = await Promise.all([
         selectedClubId
           ? getUpcomingFixturesForClub(selectedClubId, activeSeason?.id)
           : Promise.resolve(null),
@@ -80,6 +92,9 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
           : Promise.resolve([]),
         selectedLeagueId && activeSeason
           ? getRecentLeagueResults(selectedLeagueId, activeSeason.id, 8)
+          : Promise.resolve([]),
+        selectedLeagueId && activeSeason
+          ? getLeagueFixturesForMatchday(selectedLeagueId, activeSeason.id, activeSeason.current_matchday)
           : Promise.resolve([]),
       ]);
     } catch (err) {
@@ -207,7 +222,7 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
                     href={`/solo/live-match?leagueId=${encodeURIComponent(selectedLeagueId ?? "")}&fixtureId=${encodeURIComponent(upcomingFixture.id)}&userClubId=${encodeURIComponent(selectedClubId ?? "")}&homeClubId=${encodeURIComponent(upcomingFixture.home_club_id)}&awayClubId=${encodeURIComponent(upcomingFixture.away_club_id)}`}
                     className="rounded-md bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950"
                   >
-                    Play Live Match
+                    Play Match
                   </Link>
                 )}
                 {canPlayUpcomingMatch && (
@@ -220,23 +235,27 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
                       type="submit"
                       className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200"
                     >
-                      Quick Sim Match
+                      Quick Sim
                     </button>
                   </form>
                 )}
-                {!canPlayUpcomingMatch && (
-                  <form action={advanceMatchdayAction}>
-                    <input type="hidden" name="seasonId" value={activeSeason.id} />
-                    <input type="hidden" name="leagueId" value={selectedLeagueId ?? ""} />
-                    <input type="hidden" name="clubId" value={selectedClubId ?? ""} />
-                    <button
-                      type="submit"
-                      className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200"
-                    >
-                      Simulate Matchday
-                    </button>
-                  </form>
-                )}
+                <form action={advanceMatchdayAction}>
+                  <input type="hidden" name="seasonId" value={activeSeason.id} />
+                  <input type="hidden" name="leagueId" value={selectedLeagueId ?? ""} />
+                  <input type="hidden" name="clubId" value={selectedClubId ?? ""} />
+                  <button
+                    type="submit"
+                    className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200"
+                  >
+                    Advance Matchday
+                  </button>
+                </form>
+                <a href="#league-table" className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200">
+                  View Table
+                </a>
+                <a href="#fixtures-list" className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200">
+                  View Fixtures
+                </a>
               </div>
             </>
           )}
@@ -244,7 +263,7 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
       )}
 
       {selectedLeague && leagueTable.length > 0 && (
-        <section className="panel p-6">
+        <section id="league-table" className="panel p-6">
           <h2 className="text-lg font-semibold">League Table</h2>
           <div className="mt-4 overflow-x-auto">
             <table className="min-w-full text-left text-sm text-slate-200">
@@ -280,6 +299,28 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
               </tbody>
             </table>
           </div>
+        </section>
+      )}
+
+      {selectedLeague && activeSeason && (
+        <section id="fixtures-list" className="panel p-6">
+          <h2 className="text-lg font-semibold">Fixtures • Matchday {activeSeason.current_matchday}</h2>
+          {matchdayFixtures.length === 0 && (
+            <p className="mt-2 text-sm text-slate-300">No fixtures found for this matchday.</p>
+          )}
+          {matchdayFixtures.length > 0 && (
+            <ul className="mt-3 space-y-2 text-sm text-slate-300">
+              {matchdayFixtures.map((fixture) => (
+                <li key={fixture.id} className="rounded-md border border-slate-800 px-3 py-2">
+                  {clubNameById.get(fixture.home_club_id) ?? "Unknown"}{" "}
+                  {fixture.status === "completed" && fixture.home_goals !== null ? fixture.home_goals : "-"} -{" "}
+                  {fixture.status === "completed" && fixture.away_goals !== null ? fixture.away_goals : "-"}{" "}
+                  {clubNameById.get(fixture.away_club_id) ?? "Unknown"}{" "}
+                  <span className="text-xs text-slate-500">({fixture.status})</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       )}
 
