@@ -163,6 +163,11 @@ async function createSeason(): Promise<SeasonRow> {
     .single();
 
   if (error) {
+    const existing = await getActiveSeason();
+    if (existing) {
+      return existing;
+    }
+
     throw new Error(`Failed to create season: ${error.message}`);
   }
 

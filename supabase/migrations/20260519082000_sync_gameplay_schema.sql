@@ -135,5 +135,16 @@ begin
   end if;
 end $$;
 
+do $$
+begin
+  if (
+    select count(*)
+    from seasons
+    where completed = false
+  ) <= 1 then
+    execute 'create unique index if not exists seasons_single_incomplete_idx on seasons ((1)) where completed = false';
+  end if;
+end $$;
+
 create index if not exists seasons_created_at_idx on seasons(created_at desc);
 create index if not exists seasons_save_idx on seasons(save_id, created_at desc);
