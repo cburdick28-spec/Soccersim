@@ -286,13 +286,20 @@ from club_inputs ci
 where ci.id = c.id;
 
 alter table clubs
-  add column if not exists transfer_budget bigint not null default 250000,
-  add column if not exists wage_budget bigint not null default 350000;
+  add column if not exists transfer_budget bigint default 250000,
+  add column if not exists wage_budget bigint default 350000;
+
+update clubs
+set
+  transfer_budget = coalesce(transfer_budget, 250000),
+  wage_budget = coalesce(wage_budget, 350000);
 
 alter table clubs
   alter column finances set default 1000000,
   alter column transfer_budget set default 250000,
-  alter column wage_budget set default 350000;
+  alter column wage_budget set default 350000,
+  alter column transfer_budget set not null,
+  alter column wage_budget set not null;
 
 do $$
 begin
@@ -307,15 +314,29 @@ end $$;
 
 alter table matches
   add column if not exists league_id uuid references leagues(id) on delete cascade,
-  add column if not exists matchday integer not null default 1,
-  add column if not exists status text not null default 'scheduled',
+  add column if not exists matchday integer default 1,
+  add column if not exists status text default 'scheduled',
   add column if not exists home_goals integer,
   add column if not exists away_goals integer,
   add column if not exists xg_home numeric,
   add column if not exists xg_away numeric,
   add column if not exists possession_home integer,
-  add column if not exists commentary jsonb not null default '[]'::jsonb,
+  add column if not exists commentary jsonb default '[]'::jsonb,
   add column if not exists played_at timestamptz;
+
+update matches
+set
+  matchday = coalesce(matchday, 1),
+  status = coalesce(status, 'scheduled'),
+  commentary = coalesce(commentary, '[]'::jsonb);
+
+alter table matches
+  alter column matchday set default 1,
+  alter column status set default 'scheduled',
+  alter column commentary set default '[]'::jsonb,
+  alter column matchday set not null,
+  alter column status set not null,
+  alter column commentary set not null;
 
 do $$
 begin

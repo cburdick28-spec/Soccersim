@@ -97,7 +97,7 @@ async function validateGameplaySchema(): Promise<GameplaySchemaValidationResult>
     (Object.keys(REQUIRED_GAMEPLAY_SCHEMA_SELECTS) as GameplayTable[]).map(async (table) => {
       const { error } = await supabase
         .from(table)
-        .select(REQUIRED_GAMEPLAY_SCHEMA_SELECTS[table], { head: true, count: "exact" })
+        .select(REQUIRED_GAMEPLAY_SCHEMA_SELECTS[table], { head: true })
         .limit(1);
 
       if (!error) {
