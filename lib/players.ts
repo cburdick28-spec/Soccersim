@@ -41,10 +41,12 @@ type RawPlayerRow = {
   goalkeeper_handling?: number | string | null;
   goalkeeper_reflexes?: number | string | null;
   goalkeeper_positioning?: number | string | null;
+  goalkeeper_kicking?: number | string | null;
   gk_diving?: number | string | null;
   gk_handling?: number | string | null;
   gk_reflexes?: number | string | null;
   gk_positioning?: number | string | null;
+  gk_kicking?: number | string | null;
   diving?: number | string | null;
   handling?: number | string | null;
   reflexes?: number | string | null;
@@ -62,6 +64,7 @@ const playerSelect =
   "*, clubs(name, league_id, leagues(name))";
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const DEFAULT_GK_ATTRIBUTE_VALUE = 50;
 
 const toNumber = (value: unknown): number | null => {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -86,6 +89,16 @@ const getNumeric = (row: RawPlayerRow, keys: string[], fallback: number) => {
     }
   }
   return fallback;
+};
+
+const getFirstNumeric = (row: RawPlayerRow, keys: string[]) => {
+  for (const key of keys) {
+    const parsed = toNumber(row[key]);
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+  return null;
 };
 
 const getRoundedClampedNumeric = (row: RawPlayerRow, keys: string[], fallback: number, min = 1, max = 99) =>
@@ -117,9 +130,74 @@ const getPositionProfile = (position: string) => {
 };
 
 const weightedOverall = (row: RawPlayerRow) => {
-  const storedOverall = getNumeric(row, ["overall", "ovr"], NaN);
+  const storedOverall = getNumeric(row, ["overall", "ovr", "overall_rating", "base_rating", "player_overall"], NaN);
   if (Number.isFinite(storedOverall) && storedOverall >= 1) {
     return clamp(Math.round(storedOverall), 1, 99);
+  }
+
+  const positionProfile = getPositionProfile(normalizePosition(row.preferred_position));
+  if (positionProfile === "GK") {
+    const diving = getFirstNumeric(row, [
+      "goalkeeper_diving",
+      "gk_diving",
+      "goalkeeping_diving",
+      "goalkeeperDiving",
+      "gkDiving",
+      "diving",
+    ]);
+    const handling = getFirstNumeric(row, [
+      "goalkeeper_handling",
+      "gk_handling",
+      "goalkeeping_handling",
+      "goalkeeperHandling",
+      "gkHandling",
+      "handling",
+    ]);
+    const kicking = getFirstNumeric(row, [
+      "goalkeeper_kicking",
+      "gk_kicking",
+      "goalkeeping_kicking",
+      "goalkeeperKicking",
+      "gkKicking",
+      "kicking",
+    ]);
+    const reflexes = getFirstNumeric(row, [
+      "goalkeeper_reflexes",
+      "gk_reflexes",
+      "goalkeeping_reflexes",
+      "goalkeeperReflexes",
+      "gkReflexes",
+      "reflexes",
+    ]);
+    const positioning = getFirstNumeric(row, [
+      "goalkeeper_positioning",
+      "gk_positioning",
+      "goalkeeping_positioning",
+      "goalkeeperPositioning",
+      "gkPositioning",
+      "positioning",
+    ]);
+
+    console.log({
+      name: row.name ?? "Unknown Player",
+      diving,
+      handling,
+      reflexes,
+      positioning,
+    });
+
+    const safeDiving = diving ?? DEFAULT_GK_ATTRIBUTE_VALUE;
+    const safeHandling = handling ?? DEFAULT_GK_ATTRIBUTE_VALUE;
+    const safeKicking = kicking ?? DEFAULT_GK_ATTRIBUTE_VALUE;
+    const safeReflexes = reflexes ?? DEFAULT_GK_ATTRIBUTE_VALUE;
+    const safePositioning = positioning ?? DEFAULT_GK_ATTRIBUTE_VALUE;
+    const overall =
+      safeDiving * 0.24 +
+      safeHandling * 0.2 +
+      safeKicking * 0.12 +
+      safeReflexes * 0.28 +
+      safePositioning * 0.16;
+    return clamp(Math.round(overall), 1, 99);
   }
 
   const pace = getNumeric(row, ["pace", "acceleration", "speed"], 50);
@@ -128,18 +206,8 @@ const weightedOverall = (row: RawPlayerRow) => {
   const dribbling = getNumeric(row, ["dribbling"], 50);
   const defending = getNumeric(row, ["defending"], 50);
   const physical = getNumeric(row, ["physical", "physic", "strength"], 50);
-
-  const diving = getNumeric(row, ["goalkeeper_diving", "gk_diving", "diving"], defending);
-  const handling = getNumeric(row, ["goalkeeper_handling", "gk_handling", "handling"], physical);
-  const reflexes = getNumeric(row, ["goalkeeper_reflexes", "gk_reflexes", "reflexes"], defending);
-  const positioning = getNumeric(row, ["goalkeeper_positioning", "gk_positioning", "positioning"], defending);
-
-  const positionProfile = getPositionProfile(normalizePosition(row.preferred_position));
   let overall = 0;
-
-  if (positionProfile === "GK") {
-    overall = diving * 0.28 + handling * 0.24 + reflexes * 0.28 + positioning * 0.2;
-  } else if (positionProfile === "CAM") {
+  if (positionProfile === "CAM") {
     overall = passing * 0.4 + dribbling * 0.35 + shooting * 0.25;
   } else if (positionProfile === "CM") {
     overall = passing * 0.4 + defending * 0.3 + physical * 0.3;

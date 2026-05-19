@@ -92,6 +92,7 @@ export type GameState = {
 };
 
 const FIXTURE_BATCH_SIZE = 400;
+const CLUB_REPAIR_BATCH_SIZE = 50;
 const MAX_INITIALIZATION_ATTEMPTS = 3;
 const GOAL_VARIANCE = 0.55;
 const DRAW_BREAK_RATING_GAP_THRESHOLD = 7;
@@ -242,14 +243,22 @@ async function repairClubEconomyAndReputation() {
   const leagueById = new Map(leagueRows.map((league) => [league.id, league]));
   const clubsByLeague = new Map<string, Array<{ id: string; name: string; reputation: number }>>();
 
-  ((clubs ?? []) as Array<{ id: string; league_id: string; name: string; reputation: number }>).forEach((club) => {
+  ((clubs ?? []) as Array<{ id: string; league_id: string | null; name: string; reputation: number }>).forEach((club) => {
+    if (!club.league_id) {
+      throw new Error(`Club ${club.name} missing league_id`);
+    }
     const grouped = clubsByLeague.get(club.league_id) ?? [];
-    grouped.push(club);
+    grouped.push({
+      id: club.id,
+      name: club.name,
+      reputation: club.reputation,
+    });
     clubsByLeague.set(club.league_id, grouped);
   });
 
   const updates: Array<{
     id: string;
+    league_id: string;
     reputation: number;
     finances: number;
     transfer_budget: number;
@@ -287,6 +296,7 @@ async function repairClubEconomyAndReputation() {
 
       updates.push({
         id: club.id,
+        league_id: leagueId,
         reputation,
         finances,
         transfer_budget: transferBudget,
@@ -299,9 +309,37 @@ async function repairClubEconomyAndReputation() {
     return;
   }
 
-  const { error } = await supabase.from("clubs").upsert(updates as never, { onConflict: "id" });
-  if (error) {
-    throw new Error(`Failed to repair club economy and reputation: ${error.message}`);
+  for (let index = 0; index < updates.length; index += CLUB_REPAIR_BATCH_SIZE) {
+    const chunk = updates.slice(index, index + CLUB_REPAIR_BATCH_SIZE);
+    const results = await Promise.all(
+      chunk.map(async (update) => {
+        const { data, error } = await supabase
+          .from("clubs")
+          .update({
+            reputation: update.reputation,
+            finances: update.finances,
+            transfer_budget: update.transfer_budget,
+            wage_budget: update.wage_budget,
+          } as never)
+          .eq("id", update.id)
+          .eq("league_id", update.league_id)
+          .select("id")
+          .maybeSingle();
+
+        return { update, data, error };
+      }),
+    );
+
+    for (const result of results) {
+      if (result.error) {
+        throw new Error(`Failed to repair club economy and reputation: ${result.error.message}`);
+      }
+      if (!result.data) {
+        throw new Error(
+          `Failed to repair club economy and reputation: club ${result.update.id} does not exist in league ${result.update.league_id}; this indicates a data consistency issue`,
+        );
+      }
+    }
   }
 }
 
