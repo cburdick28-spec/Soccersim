@@ -147,7 +147,14 @@ begin
 end $$;
 
 alter table standings
-  add column if not exists goal_difference integer not null default 0;
+  add column if not exists goal_difference integer;
+
+update standings
+set goal_difference = coalesce(goal_difference, 0);
+
+alter table standings
+  alter column goal_difference set default 0,
+  alter column goal_difference set not null;
 
 alter table clubs
   add column if not exists transfer_budget bigint default 250000,

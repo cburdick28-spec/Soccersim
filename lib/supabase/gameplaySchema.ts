@@ -111,7 +111,7 @@ async function validateGameplaySchema(): Promise<GameplaySchemaValidationResult>
     }),
   );
 
-  const failures = checks.filter((value): value is NonNullable<typeof value> => value !== null);
+  const failures = checks.filter((result): result is NonNullable<typeof result> => result !== null);
 
   return {
     ok: failures.length === 0,

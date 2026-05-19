@@ -1303,7 +1303,7 @@ export async function runMatchday(
     throw new Error("Season not found.");
   }
 
-  if (season.completed) {
+  if (season.completed === true) {
     const gameState = setGameState({
       seasonId,
       leagueId,
