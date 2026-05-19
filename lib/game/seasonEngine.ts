@@ -242,14 +242,22 @@ async function repairClubEconomyAndReputation() {
   const leagueById = new Map(leagueRows.map((league) => [league.id, league]));
   const clubsByLeague = new Map<string, Array<{ id: string; name: string; reputation: number }>>();
 
-  ((clubs ?? []) as Array<{ id: string; league_id: string; name: string; reputation: number }>).forEach((club) => {
+  ((clubs ?? []) as Array<{ id: string; league_id: string | null; name: string; reputation: number }>).forEach((club) => {
+    if (!club.league_id) {
+      throw new Error(`Club ${club.name} missing league_id`);
+    }
     const grouped = clubsByLeague.get(club.league_id) ?? [];
-    grouped.push(club);
+    grouped.push({
+      id: club.id,
+      name: club.name,
+      reputation: club.reputation,
+    });
     clubsByLeague.set(club.league_id, grouped);
   });
 
   const updates: Array<{
     id: string;
+    league_id: string;
     reputation: number;
     finances: number;
     transfer_budget: number;
@@ -287,6 +295,7 @@ async function repairClubEconomyAndReputation() {
 
       updates.push({
         id: club.id,
+        league_id: leagueId,
         reputation,
         finances,
         transfer_budget: transferBudget,
@@ -299,9 +308,26 @@ async function repairClubEconomyAndReputation() {
     return;
   }
 
-  const { error } = await supabase.from("clubs").upsert(updates as never, { onConflict: "id" });
-  if (error) {
-    throw new Error(`Failed to repair club economy and reputation: ${error.message}`);
+  for (const update of updates) {
+    const { data, error } = await supabase
+      .from("clubs")
+      .update({
+        reputation: update.reputation,
+        finances: update.finances,
+        transfer_budget: update.transfer_budget,
+        wage_budget: update.wage_budget,
+      } as never)
+      .eq("id", update.id)
+      .eq("league_id", update.league_id)
+      .select("id")
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Failed to repair club economy and reputation: ${error.message}`);
+    }
+    if (!data) {
+      throw new Error(`Failed to repair club economy and reputation: club ${update.id} update target missing`);
+    }
   }
 }
 
