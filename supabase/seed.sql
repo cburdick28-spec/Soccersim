@@ -1117,6 +1117,8 @@ select
 from generate_series(1, 110) as s(i)
 on conflict (nation) do nothing;
 
-insert into seasons (label, current_matchday)
-values ('2026/2027', 1)
-on conflict (label) do nothing;
+insert into seasons (current_matchday, status, completed)
+select 1, 'active', false
+where not exists (
+  select 1 from seasons
+);

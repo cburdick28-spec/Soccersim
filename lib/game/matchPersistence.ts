@@ -1,5 +1,6 @@
 import { getSupabase } from "@/lib/supabase/client";
 import { runMatchday, updateLeagueStandings } from "@/lib/game/seasonEngine";
+import { ACTIVE_SEASON_STATUS_VALUES, assertGameplaySchemaReady, gameplayColumns } from "@/lib/supabase/gameplaySchema";
 import type { MatchState } from "@/lib/matchSimulator";
 import type { Player } from "@/types/player";
 
@@ -21,12 +22,14 @@ const MIN_FITNESS_DROP = 8;
 const FITNESS_DROP_VARIANCE = 5;
 
 async function getCurrentSeasonId(): Promise<string> {
+  await assertGameplaySchemaReady("persistMatchAndProgress");
   const supabase = getSupabase();
   const { data, error } = await supabase
     .from("seasons")
-    .select("id")
-    .eq("status", "active")
-    .order("started_at", { ascending: false })
+    .select(gameplayColumns("seasons", ["id"] as const))
+    .in("status", [...ACTIVE_SEASON_STATUS_VALUES])
+    .eq("completed", false)
+    .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
