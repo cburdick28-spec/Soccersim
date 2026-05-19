@@ -752,7 +752,7 @@ export async function verifySeasonInitialization(seasonId: string): Promise<Seas
 
   if (!seasonExists) {
     missingArtifacts.push("active season row");
-  } else if (!ACTIVE_SEASON_STATUS_VALUES.includes(seasonStatus)) {
+  } else if (seasonStatus !== "active" && seasonStatus !== "paused") {
     missingArtifacts.push("active season status");
   } else if (seasonCompleted !== false) {
     missingArtifacts.push("active season completion flag");
