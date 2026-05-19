@@ -130,6 +130,8 @@ const setGameState = (state: GameState) => {
 };
 
 const getGameStateStatus = (seasonId: string): GameLoopStatus => gameStateBySeasonId.get(seasonId)?.status ?? "idle";
+const isActiveSeasonStatus = (status: SeasonStatus | null): status is (typeof ACTIVE_SEASON_STATUS_VALUES)[number] =>
+  status !== null && ACTIVE_SEASON_STATUS_VALUES.includes(status);
 
 export async function getActiveSeason(): Promise<SeasonRow | null> {
   await assertGameplaySchemaReady("getActiveSeason");
@@ -757,7 +759,7 @@ export async function verifySeasonInitialization(seasonId: string): Promise<Seas
 
   if (!seasonExists) {
     missingArtifacts.push("active season row");
-  } else if (seasonStatus !== "active" && seasonStatus !== "paused") {
+  } else if (!isActiveSeasonStatus(seasonStatus)) {
     missingArtifacts.push("active season status");
   } else if (seasonCompleted === true) {
     missingArtifacts.push("active season completion flag");
@@ -1299,7 +1301,7 @@ export async function runMatchday(
     throw new Error("Season not found.");
   }
 
-  if (season.status === "completed" || season.completed) {
+  if (season.completed) {
     const gameState = setGameState({
       seasonId,
       leagueId,

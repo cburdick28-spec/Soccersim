@@ -64,14 +64,14 @@ const REQUIRED_GAMEPLAY_SCHEMA_SELECTS: Record<GameplayTable, string> = {
 let gameplaySchemaValidationPromise: Promise<GameplaySchemaValidationResult> | null = null;
 
 const formatGameplaySchemaMessage = (
-  failures: GameplaySchemaValidationResult["failures"],
+  validationFailures: GameplaySchemaValidationResult["failures"],
   fallback: string,
 ) => {
-  if (failures.length === 0) {
+  if (validationFailures.length === 0) {
     return fallback;
   }
 
-  const details = failures.map(({ table, details: failureDetails }) => `${table}: ${failureDetails}`).join("; ");
+  const details = validationFailures.map(({ table, details: failureDetails }) => `${table}: ${failureDetails}`).join("; ");
   return `Gameplay schema validation failed. Apply the Supabase gameplay schema migrations. ${details}`;
 };
 

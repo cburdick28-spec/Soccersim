@@ -10,6 +10,7 @@ update seasons
 set current_matchday = 1
 where current_matchday is null or current_matchday < 1;
 
+-- "paused" replaces the legacy "processing" lock state so in-progress seasons stay resumable after rollout.
 update seasons
 set status = 'paused'
 where status = 'processing';
