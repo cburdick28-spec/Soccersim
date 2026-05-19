@@ -92,6 +92,7 @@ export type GameState = {
 };
 
 const FIXTURE_BATCH_SIZE = 400;
+const CLUB_REPAIR_BATCH_SIZE = 50;
 const MAX_INITIALIZATION_ATTEMPTS = 3;
 const GOAL_VARIANCE = 0.55;
 const DRAW_BREAK_RATING_GAP_THRESHOLD = 7;
@@ -308,9 +309,8 @@ async function repairClubEconomyAndReputation() {
     return;
   }
 
-  const batchSize = 50;
-  for (let index = 0; index < updates.length; index += batchSize) {
-    const chunk = updates.slice(index, index + batchSize);
+  for (let index = 0; index < updates.length; index += CLUB_REPAIR_BATCH_SIZE) {
+    const chunk = updates.slice(index, index + CLUB_REPAIR_BATCH_SIZE);
     const results = await Promise.all(
       chunk.map(async (update) => {
         const { data, error } = await supabase
