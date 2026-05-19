@@ -335,7 +335,9 @@ async function repairClubEconomyAndReputation() {
         throw new Error(`Failed to repair club economy and reputation: ${result.error.message}`);
       }
       if (!result.data) {
-        throw new Error(`Failed to repair club economy and reputation: club ${result.update.id} update target missing`);
+        throw new Error(
+          `Failed to repair club economy and reputation: club ${result.update.id} with league ${result.update.league_id} not found`,
+        );
       }
     }
   }

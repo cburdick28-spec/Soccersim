@@ -64,6 +64,7 @@ const playerSelect =
   "*, clubs(name, league_id, leagues(name))";
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const DEFAULT_GK_ATTRIBUTE_VALUE = 50;
 
 const toNumber = (value: unknown): number | null => {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -185,11 +186,11 @@ const weightedOverall = (row: RawPlayerRow) => {
       positioning,
     });
 
-    const safeDiving = diving ?? 50;
-    const safeHandling = handling ?? 50;
-    const safeKicking = kicking ?? 50;
-    const safeReflexes = reflexes ?? 50;
-    const safePositioning = positioning ?? 50;
+    const safeDiving = diving ?? DEFAULT_GK_ATTRIBUTE_VALUE;
+    const safeHandling = handling ?? DEFAULT_GK_ATTRIBUTE_VALUE;
+    const safeKicking = kicking ?? DEFAULT_GK_ATTRIBUTE_VALUE;
+    const safeReflexes = reflexes ?? DEFAULT_GK_ATTRIBUTE_VALUE;
+    const safePositioning = positioning ?? DEFAULT_GK_ATTRIBUTE_VALUE;
     const overall =
       safeDiving * 0.24 +
       safeHandling * 0.2 +
