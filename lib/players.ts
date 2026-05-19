@@ -130,7 +130,7 @@ const getPositionProfile = (position: string) => {
 };
 
 const weightedOverall = (row: RawPlayerRow) => {
-  const storedOverall = getNumeric(row, ["overall", "ovr", "overall_rating", "rating"], NaN);
+  const storedOverall = getNumeric(row, ["overall", "ovr", "overall_rating", "base_rating", "player_overall"], NaN);
   if (Number.isFinite(storedOverall) && storedOverall >= 1) {
     return clamp(Math.round(storedOverall), 1, 99);
   }

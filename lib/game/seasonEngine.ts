@@ -336,7 +336,7 @@ async function repairClubEconomyAndReputation() {
       }
       if (!result.data) {
         throw new Error(
-          `Failed to repair club economy and reputation: club ${result.update.id} with league ${result.update.league_id} not found`,
+          `Failed to repair club economy and reputation: club ${result.update.id} does not exist in league ${result.update.league_id}; this indicates a data consistency issue`,
         );
       }
     }
