@@ -123,6 +123,7 @@ const gameStateBySeasonId = new Map<string, GameState>();
 const matchdayLocks = new Set<string>();
 const seasonRowSelect = gameplayColumns("seasons", ["id", "current_matchday", "status", "completed", "created_at"] as const);
 const seasonStatusSelect = gameplayColumns("seasons", ["id", "status", "completed"] as const);
+const activeSeasonStatusSet = new Set<string>(ACTIVE_SEASON_STATUS_VALUES);
 
 const setGameState = (state: GameState) => {
   gameStateBySeasonId.set(state.seasonId, state);
@@ -131,7 +132,7 @@ const setGameState = (state: GameState) => {
 
 const getGameStateStatus = (seasonId: string): GameLoopStatus => gameStateBySeasonId.get(seasonId)?.status ?? "idle";
 const isActiveSeasonStatus = (status: SeasonStatus | null): status is (typeof ACTIVE_SEASON_STATUS_VALUES)[number] =>
-  status !== null && ACTIVE_SEASON_STATUS_VALUES.includes(status);
+  status !== null && activeSeasonStatusSet.has(status);
 
 export async function getActiveSeason(): Promise<SeasonRow | null> {
   await assertGameplaySchemaReady("getActiveSeason");
