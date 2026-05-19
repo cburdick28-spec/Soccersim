@@ -88,6 +88,20 @@ do $$
 begin
   if not exists (
     select 1 from pg_constraint
+    where conname = 'seasons_completed_status_check'
+  ) then
+    alter table seasons
+      add constraint seasons_completed_status_check check (
+        (status = 'completed' and completed = true)
+        or (status <> 'completed' and completed = false)
+      );
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
     where conname = 'seasons_league_id_fkey'
   ) then
     alter table seasons

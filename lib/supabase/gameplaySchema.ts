@@ -71,8 +71,10 @@ const formatGameplaySchemaMessage = (
     return fallback;
   }
 
-  const details = validationFailures.map(({ table, details: failureDetails }) => `${table}: ${failureDetails}`).join("; ");
-  return `Gameplay schema validation failed. Apply the Supabase gameplay schema migrations. ${details}`;
+  const failureSummary = validationFailures
+    .map(({ table, details: failureDetails }) => `${table}: ${failureDetails}`)
+    .join("; ");
+  return `Gameplay schema validation failed. Apply the Supabase gameplay schema migrations. ${failureSummary}`;
 };
 
 async function validateGameplaySchema(): Promise<GameplaySchemaValidationResult> {

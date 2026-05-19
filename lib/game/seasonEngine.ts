@@ -1270,9 +1270,10 @@ export async function quickSimUserFixture(params: {
 
 async function updateSeasonStatus(seasonId: string, fromStatus: SeasonStatus, toStatus: SeasonStatus) {
   const supabase = getSupabase();
+  const completed = toStatus === "completed" ? true : false;
   const { error } = await supabase
     .from("seasons")
-    .update({ status: toStatus, completed: toStatus === "completed" } as never)
+    .update({ status: toStatus, completed } as never)
     .eq("id", seasonId)
     .eq("status", fromStatus);
   if (error) {
