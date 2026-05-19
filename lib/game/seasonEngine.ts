@@ -308,25 +308,35 @@ async function repairClubEconomyAndReputation() {
     return;
   }
 
-  for (const update of updates) {
-    const { data, error } = await supabase
-      .from("clubs")
-      .update({
-        reputation: update.reputation,
-        finances: update.finances,
-        transfer_budget: update.transfer_budget,
-        wage_budget: update.wage_budget,
-      } as never)
-      .eq("id", update.id)
-      .eq("league_id", update.league_id)
-      .select("id")
-      .maybeSingle();
+  const batchSize = 50;
+  for (let index = 0; index < updates.length; index += batchSize) {
+    const chunk = updates.slice(index, index + batchSize);
+    const results = await Promise.all(
+      chunk.map(async (update) => {
+        const { data, error } = await supabase
+          .from("clubs")
+          .update({
+            reputation: update.reputation,
+            finances: update.finances,
+            transfer_budget: update.transfer_budget,
+            wage_budget: update.wage_budget,
+          } as never)
+          .eq("id", update.id)
+          .eq("league_id", update.league_id)
+          .select("id")
+          .maybeSingle();
 
-    if (error) {
-      throw new Error(`Failed to repair club economy and reputation: ${error.message}`);
-    }
-    if (!data) {
-      throw new Error(`Failed to repair club economy and reputation: club ${update.id} update target missing`);
+        return { update, data, error };
+      }),
+    );
+
+    for (const result of results) {
+      if (result.error) {
+        throw new Error(`Failed to repair club economy and reputation: ${result.error.message}`);
+      }
+      if (!result.data) {
+        throw new Error(`Failed to repair club economy and reputation: club ${result.update.id} update target missing`);
+      }
     }
   }
 }
