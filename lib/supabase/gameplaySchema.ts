@@ -127,6 +127,10 @@ async function getGameplaySchemaValidation(): Promise<GameplaySchemaValidationRe
 }
 
 export async function warmGameplaySchemaValidation() {
+  if (!isSupabaseConfigured) {
+    return;
+  }
+
   const validation = await getGameplaySchemaValidation();
 
   if (!validation.ok) {
