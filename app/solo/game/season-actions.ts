@@ -31,7 +31,11 @@ const MAX_INITIALIZATION_ERROR_LENGTH = 240;
 async function logInitializationFixtureAudit(seasonId: string, selectedClubId: string, currentMatchday: number) {
   const supabase = getSupabase();
 
-  const [{ data: allFixtures, error: allFixturesError }, { data: md1, error: md1Error }, { data: userFixtures, error: userFixturesError }] =
+  const [
+    { data: allFixtures, error: allFixturesError },
+    { data: firstMatchdayFixtures, error: firstMatchdayFixturesError },
+    { data: userFixtures, error: userFixturesError },
+  ] =
     await Promise.all([
       supabase.from("matches").select("*").eq("season_id", seasonId),
       supabase.from("matches").select("*").eq("season_id", seasonId).eq("matchday", 1),
@@ -43,17 +47,17 @@ async function logInitializationFixtureAudit(seasonId: string, selectedClubId: s
         .or(`home_club_id.eq.${selectedClubId},away_club_id.eq.${selectedClubId}`),
     ]);
 
-  if (allFixturesError || md1Error || userFixturesError) {
+  if (allFixturesError || firstMatchdayFixturesError || userFixturesError) {
     console.warn("[initializeCareerAction] Fixture audit query failed", {
       allFixturesError: allFixturesError?.message,
-      md1Error: md1Error?.message,
+      firstMatchdayFixturesError: firstMatchdayFixturesError?.message,
       userFixturesError: userFixturesError?.message,
     });
     return;
   }
 
   console.info("ALL FIXTURES", allFixtures);
-  console.info("MATCHDAY 1", md1);
+  console.info("MATCHDAY 1", firstMatchdayFixtures);
   console.info("USER FIXTURES", userFixtures);
 }
 

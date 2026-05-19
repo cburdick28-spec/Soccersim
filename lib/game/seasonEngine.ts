@@ -509,14 +509,14 @@ async function insertFixtures(fixtures: FixtureInsert[]): Promise<void> {
   for (let i = 0; i < fixtures.length; i += FIXTURE_BATCH_SIZE) {
     const chunk = fixtures.slice(i, i + FIXTURE_BATCH_SIZE);
     const payload = chunk.map((fixture) => {
-      const next = { ...fixture };
+      const fixtureWithFlags = { ...fixture };
       if (includePlayedFlag) {
-        next.played = false;
+        fixtureWithFlags.played = false;
       }
       if (includeSimulatedFlag) {
-        next.simulated = false;
+        fixtureWithFlags.simulated = false;
       }
-      return next;
+      return fixtureWithFlags;
     });
     const { error } = await supabase
       .from("matches")
