@@ -759,7 +759,7 @@ export async function verifySeasonInitialization(seasonId: string): Promise<Seas
     missingArtifacts.push("active season row");
   } else if (seasonStatus !== "active" && seasonStatus !== "paused") {
     missingArtifacts.push("active season status");
-  } else if (seasonCompleted !== false) {
+  } else if (seasonCompleted === true) {
     missingArtifacts.push("active season completion flag");
   }
   if (verifiedFixtureCount < expectedFixtureCount || verifiedFixtureCount === 0) {

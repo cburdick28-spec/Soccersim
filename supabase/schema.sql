@@ -386,6 +386,8 @@ begin
     where completed = false
   ) <= 1 then
     execute 'create unique index if not exists seasons_single_incomplete_idx on seasons ((1)) where completed = false';
+  else
+    raise notice 'Skipping seasons_single_incomplete_idx because existing incomplete seasons would violate the constraint.';
   end if;
 end $$;
 

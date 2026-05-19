@@ -71,7 +71,7 @@ const formatGameplaySchemaMessage = (
     return fallback;
   }
 
-  const details = failures.map(({ table, details: failure }) => `${table}: ${failure}`).join("; ");
+  const details = failures.map(({ table, details: failureDetails }) => `${table}: ${failureDetails}`).join("; ");
   return `Gameplay schema validation failed. Apply the Supabase gameplay schema migrations. ${details}`;
 };
 
