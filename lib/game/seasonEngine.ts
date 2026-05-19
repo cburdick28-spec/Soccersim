@@ -1173,7 +1173,35 @@ export async function getUpcomingFixturesForClub(clubId: string, seasonId?: stri
   }
 
   const includePlayedFlag = await hasMatchesPlayedFlagColumn();
-  const baseQuery = supabase
+  const filteredUpcomingQuery = supabase
+    .from("matches")
+    .select("id, league_id, season_id, home_club_id, away_club_id, matchday, status")
+    .eq("season_id", season.id)
+    .gte("matchday", season.current_matchday)
+    .or(`home_club_id.eq.${clubId},away_club_id.eq.${clubId}`)
+    .order("matchday", { ascending: true })
+    .limit(1);
+  const { data: filteredFixtures, error: filteredError } = includePlayedFlag
+    ? await filteredUpcomingQuery.eq("played", false)
+    : await filteredUpcomingQuery.in("status", ["scheduled", "in_progress"]);
+  if (filteredError) {
+    throw new Error(`Failed to fetch upcoming fixture: ${filteredError.message}`);
+  }
+  if ((filteredFixtures ?? []).length > 0) {
+    return ((filteredFixtures ?? [])[0] as
+      | {
+          id: string;
+          league_id: string;
+          season_id: string;
+          home_club_id: string;
+          away_club_id: string;
+          matchday: number;
+          status: MatchStatus;
+        }
+      | undefined) ?? null;
+  }
+
+  const fallbackUpcomingQuery = supabase
     .from("matches")
     .select("id, league_id, season_id, home_club_id, away_club_id, matchday, status")
     .eq("season_id", season.id)
@@ -1181,8 +1209,8 @@ export async function getUpcomingFixturesForClub(clubId: string, seasonId?: stri
     .order("matchday", { ascending: true })
     .limit(1);
   const { data: fixtures, error } = includePlayedFlag
-    ? await baseQuery.eq("played", false)
-    : await baseQuery.in("status", ["scheduled", "in_progress"]);
+    ? await fallbackUpcomingQuery.eq("played", false)
+    : await fallbackUpcomingQuery.in("status", ["scheduled", "in_progress"]);
 
   if (error) {
     throw new Error(`Failed to fetch upcoming fixture: ${error.message}`);
