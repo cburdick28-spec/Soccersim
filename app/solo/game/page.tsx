@@ -140,7 +140,7 @@ export default async function SoloGamePage({ searchParams }: SoloGamePageProps) 
         {initError && <p className="mt-2 text-xs text-red-300">Initialize Season failed: {initError}</p>}
         {activeSeason && (
           <p className="mt-2 text-xs text-slate-400">
-            Season {activeSeason.label} • Matchday {activeSeason.current_matchday} • {activeSeason.status}
+            Active season • Matchday {activeSeason.current_matchday} • {activeSeason.status}
           </p>
         )}
       </section>

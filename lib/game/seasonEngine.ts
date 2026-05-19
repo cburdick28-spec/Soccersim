@@ -1,13 +1,20 @@
 import { getSupabase } from "@/lib/supabase/client";
+import {
+  ACTIVE_SEASON_STATUS_VALUES,
+  assertGameplaySchemaReady,
+  gameplayColumns,
+  type SupportedSeasonStatus,
+} from "@/lib/supabase/gameplaySchema";
 
-type SeasonStatus = "active" | "processing" | "completed";
+type SeasonStatus = SupportedSeasonStatus;
 type MatchStatus = "scheduled" | "in_progress" | "completed";
 
 export type SeasonRow = {
   id: string;
-  label: string;
   current_matchday: number;
   status: SeasonStatus;
+  completed: boolean;
+  created_at: string;
 };
 
 type ClubRow = {
@@ -109,13 +116,13 @@ const randomBetween = (min: number, max: number) => Math.random() * (max - min) 
 const deterministicHash = (value: string) =>
   value.split("").reduce((acc, char, index) => (acc + char.charCodeAt(0) * (index + 1)) % 1_000_003, 0);
 
-const createSeasonLabel = (year = new Date().getUTCFullYear()) => `${year}/${year + 1}`;
-
 const average = (values: number[]) =>
   values.length === 0 ? 0 : values.reduce((total, value) => total + value, 0) / values.length;
 
 const gameStateBySeasonId = new Map<string, GameState>();
 const matchdayLocks = new Set<string>();
+const seasonRowSelect = gameplayColumns("seasons", ["id", "current_matchday", "status", "completed", "created_at"] as const);
+const seasonStatusSelect = gameplayColumns("seasons", ["id", "status", "completed"] as const);
 
 const setGameState = (state: GameState) => {
   gameStateBySeasonId.set(state.seasonId, state);
@@ -125,12 +132,14 @@ const setGameState = (state: GameState) => {
 const getGameStateStatus = (seasonId: string): GameLoopStatus => gameStateBySeasonId.get(seasonId)?.status ?? "idle";
 
 export async function getActiveSeason(): Promise<SeasonRow | null> {
+  await assertGameplaySchemaReady("getActiveSeason");
   const supabase = getSupabase();
   const { data, error } = await supabase
     .from("seasons")
-    .select("id, label, current_matchday, status")
-    .in("status", ["active", "processing"])
-    .order("started_at", { ascending: false })
+    .select(seasonRowSelect)
+    .in("status", [...ACTIVE_SEASON_STATUS_VALUES])
+    .eq("completed", false)
+    .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
@@ -143,35 +152,21 @@ export async function getActiveSeason(): Promise<SeasonRow | null> {
 
 async function createSeason(): Promise<SeasonRow> {
   const supabase = getSupabase();
-  const baseLabel = createSeasonLabel();
+  const { data, error } = await supabase
+    .from("seasons")
+    .insert({
+      current_matchday: 1,
+      status: "active",
+      completed: false,
+    } as never)
+    .select(seasonRowSelect)
+    .single();
 
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    const label = attempt === 0 ? baseLabel : `${baseLabel}-${attempt + 1}`;
-    const { data, error } = await supabase
-      .from("seasons")
-      .insert({
-        label,
-        current_matchday: 1,
-        status: "active",
-      } as never)
-      .select("id, label, current_matchday, status")
-      .single();
-
-    if (!error) {
-      return data as SeasonRow;
-    }
-
-    if (!error.message.toLowerCase().includes("duplicate")) {
-      throw new Error(`Failed to create season: ${error.message}`);
-    }
-
-    const existing = await getActiveSeason();
-    if (existing) {
-      return existing;
-    }
+  if (error) {
+    throw new Error(`Failed to create season: ${error.message}`);
   }
 
-  throw new Error("Failed to create season after multiple retries.");
+  return data as SeasonRow;
 }
 
 async function getOrCreateActiveSeason(): Promise<SeasonRow> {
@@ -716,7 +711,7 @@ export async function validateSeasonIntegrity(seasonId: string): Promise<{
 export async function verifySeasonInitialization(seasonId: string): Promise<SeasonInitializationVerification> {
   const supabase = getSupabase();
   const [{ data: seasonRow, error: seasonError }, { data: clubs, error: clubsError }] = await Promise.all([
-    supabase.from("seasons").select("id, status").eq("id", seasonId).maybeSingle(),
+    supabase.from("seasons").select(seasonStatusSelect).eq("id", seasonId).maybeSingle(),
     supabase.from("clubs").select("id, league_id"),
   ]);
 
@@ -749,15 +744,18 @@ export async function verifySeasonInitialization(seasonId: string): Promise<Seas
   }
 
   const seasonExists = Boolean(seasonRow);
-  const seasonStatus = (seasonRow as { status: SeasonStatus } | null)?.status ?? null;
+  const seasonStatus = (seasonRow as { status: SeasonStatus; completed: boolean } | null)?.status ?? null;
+  const seasonCompleted = (seasonRow as { status: SeasonStatus; completed: boolean } | null)?.completed ?? null;
   const verifiedFixtureCount = actualFixtureCount ?? 0;
   const verifiedStandingsCount = actualStandingsCount ?? 0;
   const missingArtifacts: string[] = [];
 
   if (!seasonExists) {
     missingArtifacts.push("active season row");
-  } else if (seasonStatus !== "active" && seasonStatus !== "processing") {
+  } else if (!ACTIVE_SEASON_STATUS_VALUES.includes(seasonStatus)) {
     missingArtifacts.push("active season status");
+  } else if (seasonCompleted !== false) {
+    missingArtifacts.push("active season completion flag");
   }
   if (verifiedFixtureCount < expectedFixtureCount || verifiedFixtureCount === 0) {
     missingArtifacts.push("fixtures schedule");
@@ -779,6 +777,7 @@ export async function verifySeasonInitialization(seasonId: string): Promise<Seas
 }
 
 export async function initializeSeason(): Promise<SeasonRow> {
+  await assertGameplaySchemaReady("initializeSeason");
   let lastError: Error = new Error("Season initialization failed.");
   for (let attempt = 1; attempt <= MAX_INITIALIZATION_ATTEMPTS; attempt += 1) {
     try {
@@ -811,6 +810,7 @@ export async function initializeSeason(): Promise<SeasonRow> {
 }
 
 export async function updateLeagueStandings(leagueId: string, seasonId: string): Promise<void> {
+  await assertGameplaySchemaReady("updateLeagueStandings");
   const supabase = getSupabase();
   const [{ data: clubs, error: clubsError }, { data: matches, error: matchesError }] = await Promise.all([
     supabase.from("clubs").select("id, name").eq("league_id", leagueId),
@@ -1128,13 +1128,14 @@ export async function simulateOtherLeagueMatches(
 }
 
 export async function getUpcomingFixturesForClub(clubId: string, seasonId?: string) {
+  await assertGameplaySchemaReady("getUpcomingFixturesForClub");
   const supabase = getSupabase();
   const season = seasonId
     ? (
         (
           await supabase
             .from("seasons")
-            .select("id, label, current_matchday, status")
+            .select(seasonRowSelect)
             .eq("id", seasonId)
             .maybeSingle()
         ).data as SeasonRow | null
@@ -1172,6 +1173,7 @@ export async function getUpcomingFixturesForClub(clubId: string, seasonId?: stri
 }
 
 export async function getLeagueTable(leagueId: string, seasonId: string): Promise<LeagueTableRow[]> {
+  await assertGameplaySchemaReady("getLeagueTable");
   const supabase = getSupabase();
   const [{ data: standings, error: standingsError }, { data: clubs, error: clubsError }] = await Promise.all([
     supabase
@@ -1215,6 +1217,7 @@ export async function quickSimUserFixture(params: {
   leagueId: string;
   fixtureId: string;
 }): Promise<boolean> {
+  await assertGameplaySchemaReady("quickSimUserFixture");
   const supabase = getSupabase();
   const { data, error } = await supabase
     .from("matches")
@@ -1261,7 +1264,7 @@ async function updateSeasonStatus(seasonId: string, fromStatus: SeasonStatus, to
   const supabase = getSupabase();
   const { error } = await supabase
     .from("seasons")
-    .update({ status: toStatus } as never)
+    .update({ status: toStatus, completed: toStatus === "completed" } as never)
     .eq("id", seasonId)
     .eq("status", fromStatus);
   if (error) {
@@ -1274,10 +1277,11 @@ export async function runMatchday(
   leagueId: string,
   userClubId: string,
 ): Promise<{ progressed: boolean; requiresUserMatch: boolean; season: SeasonRow; gameState: GameState; userFixtureId: string | null }> {
+  await assertGameplaySchemaReady("runMatchday");
   const supabase = getSupabase();
   const { data: seasonData, error: seasonError } = await supabase
     .from("seasons")
-    .select("id, label, current_matchday, status")
+    .select(seasonRowSelect)
     .eq("id", seasonId)
     .maybeSingle();
 
@@ -1290,7 +1294,7 @@ export async function runMatchday(
     throw new Error("Season not found.");
   }
 
-  if (season.status === "completed") {
+  if (season.status === "completed" || season.completed) {
     const gameState = setGameState({
       seasonId,
       leagueId,
@@ -1300,7 +1304,7 @@ export async function runMatchday(
     });
     return { progressed: false, requiresUserMatch: false, season, gameState, userFixtureId: null };
   }
-  if (season.status === "processing") {
+  if (season.status === "paused") {
     const gameState = setGameState({
       seasonId,
       leagueId,
@@ -1351,10 +1355,10 @@ export async function runMatchday(
 
   const { data: lockedSeasonRows, error: lockError } = await supabase
     .from("seasons")
-    .update({ status: "processing" } as never)
+    .update({ status: "paused", completed: false } as never)
     .eq("id", seasonId)
     .eq("status", "active")
-    .select("id, label, current_matchday, status")
+    .select(seasonRowSelect)
     .limit(1);
   if (lockError) {
     throw new Error(`Failed to acquire season lock: ${lockError.message}`);
@@ -1430,7 +1434,7 @@ export async function runMatchday(
 
     if (userMatch && userMatch.status !== "completed") {
       console.info(`[user match detected] fixture=${userMatch.id}`);
-      await updateSeasonStatus(seasonId, "processing", "active");
+      await updateSeasonStatus(seasonId, "paused", "active");
       gameState = setGameState({
         seasonId,
         leagueId,
@@ -1441,7 +1445,13 @@ export async function runMatchday(
       if (completedAiMatches > 0) {
         await updateLeagueStandings(leagueId, seasonId);
       }
-      return { progressed: false, requiresUserMatch: true, season: { ...lockedSeason, status: "active" }, gameState, userFixtureId: userMatch.id };
+      return {
+        progressed: false,
+        requiresUserMatch: true,
+        season: { ...lockedSeason, status: "active", completed: false },
+        gameState,
+        userFixtureId: userMatch.id,
+      };
     }
 
     if (completedAiMatches > 0) {
@@ -1460,7 +1470,7 @@ export async function runMatchday(
       throw new Error(`Failed to check pending fixtures: ${remainingError.message}`);
     }
     if ((remaining ?? []).length > 0) {
-      await updateSeasonStatus(seasonId, "processing", "active");
+      await updateSeasonStatus(seasonId, "paused", "active");
       gameState = setGameState({
         seasonId,
         leagueId,
@@ -1468,7 +1478,13 @@ export async function runMatchday(
         userClubId,
         status: "in-match",
       });
-      return { progressed: false, requiresUserMatch: true, season: { ...lockedSeason, status: "active" }, gameState, userFixtureId: null };
+      return {
+        progressed: false,
+        requiresUserMatch: true,
+        season: { ...lockedSeason, status: "active", completed: false },
+        gameState,
+        userFixtureId: null,
+      };
     }
 
     const { data: maxMatchdayRows, error: maxMatchdayError } = await supabase
@@ -1486,13 +1502,13 @@ export async function runMatchday(
     if (lockedSeason.current_matchday >= maxMatchday) {
       const { error } = await supabase
         .from("seasons")
-        .update({ status: "completed" } as never)
+        .update({ status: "completed", completed: true } as never)
         .eq("id", lockedSeason.id)
-        .eq("status", "processing");
+        .eq("status", "paused");
       if (error) {
         throw new Error(`Failed to complete season: ${error.message}`);
       }
-      const finishedSeason = { ...lockedSeason, status: "completed" as const };
+      const finishedSeason = { ...lockedSeason, status: "completed" as const, completed: true };
       gameState = setGameState({
         seasonId,
         leagueId,
@@ -1507,14 +1523,14 @@ export async function runMatchday(
     const nextMatchday = lockedSeason.current_matchday + 1;
     const { error: updateError } = await supabase
       .from("seasons")
-      .update({ current_matchday: nextMatchday, status: "active" } as never)
+      .update({ current_matchday: nextMatchday, status: "active", completed: false } as never)
       .eq("id", lockedSeason.id)
-      .eq("status", "processing");
+      .eq("status", "paused");
     if (updateError) {
       throw new Error(`Failed to advance matchday: ${updateError.message}`);
     }
 
-    const progressedSeason = { ...lockedSeason, current_matchday: nextMatchday, status: "active" as const };
+    const progressedSeason = { ...lockedSeason, current_matchday: nextMatchday, status: "active" as const, completed: false };
     gameState = setGameState({
       seasonId,
       leagueId,
@@ -1534,14 +1550,14 @@ export async function runMatchday(
         status: "idle",
       });
     }
-    const { data: processingSeason } = await supabase
+    const { data: pausedSeason } = await supabase
       .from("seasons")
       .select("id")
       .eq("id", seasonId)
-      .eq("status", "processing")
+      .eq("status", "paused")
       .limit(1);
-    if ((processingSeason ?? []).length > 0) {
-      await updateSeasonStatus(seasonId, "processing", "active");
+    if ((pausedSeason ?? []).length > 0) {
+      await updateSeasonStatus(seasonId, "paused", "active");
     }
     matchdayLocks.delete(seasonId);
   }
@@ -1552,13 +1568,14 @@ export async function advanceMatchday(params: {
   userFixtureId?: string;
   quickSimUserMatch?: boolean;
 }): Promise<{ progressed: boolean; requiresUserMatch: boolean; season: SeasonRow }> {
+  await assertGameplaySchemaReady("advanceMatchday");
   const supabase = getSupabase();
   const season = params.seasonId
     ? (
         (
           await supabase
             .from("seasons")
-            .select("id, label, current_matchday, status")
+            .select(seasonRowSelect)
             .eq("id", params.seasonId)
             .maybeSingle()
         ).data as SeasonRow | null
@@ -1628,6 +1645,7 @@ export async function advanceMatchday(params: {
 }
 
 export async function getRecentLeagueResults(leagueId: string, seasonId: string, limit = 10) {
+  await assertGameplaySchemaReady("getRecentLeagueResults");
   const supabase = getSupabase();
   const { data, error } = await supabase
     .from("matches")
