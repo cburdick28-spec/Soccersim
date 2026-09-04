@@ -1,0 +1,17 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Pocket Manager - Leagues</title>
+</head>
+<body>
+  <h1>Leagues</h1>
+  <ul>
+  {% for league in leagues %}
+    <li>{{ league.name }} - <a href="/clubs?league_id={{ league.id }}">View Clubs</a></li>
+  {% else %}
+    <li>No leagues found.</li>
+  {% endfor %}
+  </ul>
+</body>
+</html>

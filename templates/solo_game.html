@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Solo - {{ club.name if club else 'Solo' }}</title>
+</head>
+<body>
+  <h1>Solo Career</h1>
+  {% if club %}
+    <p>Managing: <strong>{{ club.name }}</strong></p>
+  {% else %}
+    <p>No club selected.</p>
+  {% endif %}
+
+  <form method="post" action="/simulate">
+    <input type="hidden" name="league_id" value="{{ league_id }}" />
+    <input type="hidden" name="club_id" value="{{ club.id if club else '' }}" />
+    <button type="submit">Quick Sim Next Fixture</button>
+  </form>
+
+  <p><a href="/clubs?league_id={{ league_id }}">Change Club</a> | <a href="/">Home</a></p>
+</body>
+</html>
